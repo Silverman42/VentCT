@@ -1,0 +1,578 @@
+@import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
+/* Fonts */
+/*
+ * If TheLoveClub.otf continues to cause OTS parsing errors, consider:
+ * 1. Converting to WOFF2 format for better browser compatibility
+ * 3. Replacing with a similar alternative font
+ */
+@font-face {
+    font-family: 'TheLoveClub';
+    src: url('../fonts/TheLoveClub.otf') format('opentype'),
+         url('../fonts/TheLoveClub.otf') format('truetype');
+    font-weight: 400;
+    font-display: swap;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-Black.ttf') format('truetype');
+    font-weight: 900;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-Light.ttf') format('truetype');
+    font-weight: 300;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-Thin.ttf') format('truetype');
+    font-weight: 100;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-BoldItalic.ttf') format('truetype');
+    font-weight: 700;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-LightItalic.ttf') format('truetype');
+    font-weight: 300;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lato';
+    src: url('../fonts/Lato/Lato-ThinItalic.ttf') format('truetype');
+    font-weight: 100;
+    font-style: italic;
+    font-display: swap;
+}
+
+/* Matter font */
+@font-face {
+    font-family: 'Matter';
+    src: url('../fonts/Matter/Matter-Light.ttf') format('truetype');
+    font-weight: 300;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Matter';
+    src: url('../fonts/Matter/Matter-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Matter';
+    src: url('../fonts/Matter/Matter-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Matter';
+    src: url('../fonts/Matter/Matter-SemiBold.ttf') format('truetype');
+    font-weight: 600;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Matter';
+    src: url('../fonts/Matter/Matter-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Matter';
+    src: url('../fonts/Matter/Matter-Heavy.ttf') format('truetype');
+    font-weight: 800;
+    font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-Light.ttf") format("truetype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-LightItalic.ttf") format("truetype");
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-MediumItalic.ttf") format("truetype");
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-SemiBoldItalic.ttf") format("truetype");
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("../fonts/Figtree/Figtree-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@theme{
+    /* fonts */
+    --font-heading: 'TheLoveClub';
+    /* --font-body: 'Lato'; */
+    --font-body: 'Figtree';
+    --font-alternative: 'Matter';
+
+    /* Font family configurations */
+    --color-brand-color-default: #00AAFE;
+    --color-black-scale-default: #000000;
+    --color-biege-drv-default: #FFFCF5;
+    --color-yellow-drv-default: #FFF700;
+
+    /* Brand colors */
+    --color-brand-color-001: #001119;
+    --color-brand-color-002: #002233;
+    --color-brand-color-003: #00334C;
+    --color-brand-color-004: #004466;
+    --color-brand-color-005: #006698;
+    --color-brand-color-006: #0088CB;
+    --color-brand-color-007: #00AAFE;
+    --color-brand-color-008: #33BBFE;
+    --color-brand-color-009: #66CCFE;
+    --color-brand-color-010: #99DDFF;
+    --color-brand-color-011: #B2E5FF;
+    --color-brand-color-012: #CCEEFF;
+    --color-brand-color-013: #E5F6FF;
+
+    /* Black scale colors */
+    --color-black-scale-001: #333333;
+    --color-black-scale-002: #666666;
+    --color-black-scale-003: #999999;
+    --color-black-scale-004: #B3B3B3;
+    --color-black-scale-005: #CCCCCC;
+    --color-black-scale-006: #E6E6E6;
+
+    /* Biege colors */
+    --color-biege-001: #1A1900;
+    --color-biege-002: #333100;
+    --color-biege-003: #4D4A00;
+    --color-biege-004: #666300;
+    --color-biege-005: #999400;
+    --color-biege-006: #CCC600;
+    --color-biege-007: #FFF700;
+    --color-biege-008: #FFF933;
+    --color-biege-009: #FFFA66;
+    --color-biege-010: #FFFC99;
+    --color-biege-011: #FFFDB2;
+    --color-biege-012: #FFFDCC;
+    --color-biege-013: #FFFEE5;
+
+    /* Orange colors */
+    --color-orange-*: initial;
+    --color-orange-001: #1A0900;
+    --color-orange-002: #331300;
+    --color-orange-003: #4D1C00;
+    --color-orange-004: #662600;
+    --color-orange-007: #FF9E66;
+    --color-orange-008: #FF7E33;
+    --color-orange-013: #FFEFE5;
+    --color-orange-default: #FF5E00;
+
+    /* Rose colors */
+    --color-rose-010: #FFF8F4;
+
+    /* Green colors */
+    --color-green-*: initial;
+    --color-green-005: #009923;
+    --color-green-012: #B2FFC4;
+    --color-green-014: #E5FFEB;
+    --color-green-005: #009923;
+
+    /* Team color */
+    --color-team: #EDF3FF;
+
+    /* Yellow colors */
+    --color-yellow-*: initial;
+    --color-yellow-013: #FFFEE5;
+
+    /* Gray colors */
+    --color-gray-*: initial;
+    --color-gray-001: #242933;
+    --color-gray-009: #ECEEF3;
+    --color-gray-010: #F2F4F7;
+    --color-gray-011: #F8F9FC;
+
+    /*Layout colors*/
+    --color-auth-bg: var(--color-white);
+    --color-auth-heading: #000000;
+    --color-auth-subheading: #3B404A;
+    --color-input-label: #000000;
+    --color-input-text: #000000;
+    --color-input-placeholder: #B3B3B3;
+    --color-input-border: #DFE3EC;
+    --color-auth-pass-hide-btn: #F2F4F7;
+    --color-auth-pass-hide-btn-text: #000000;
+    --color-auth-forgot-pass-container: #F2F4F7;
+    --color-auth-forgot-pass-text: #333333;
+    --color-auth-forgot-pass-btn: #FFFFFF;
+    --color-auth-forgot-pass-btn-text: #000000;
+    --color-default-text: #000000;
+    --color-default-bg: #FFFFFF;
+
+    /* Dashboard colors */
+    --color-dashboard-bg: var(--color-white);
+    --color-dashboard-bg-dark: #F2F4F7;
+    --color-dashboard-bg-darker: #FAFAFA;
+    --color-dashboard-card-border: #E6E9EF;
+    --color-dashboard-card-border-light: #F2F4F7;
+    --color-dashboard-card-divider: #F2F4F7;
+    --color-dashboard-header-border: #ECEEF3;
+    --color-dashboard-input-border: #E6E9EF;
+    --color-dashboard-heading: #242933;
+    --color-dashboard-heading-blue: #001119;
+    --color-dashboard-text: #6A6E76;
+    --color-dashboard-text-darker: #001119;
+    --color-dashboard-text-light: #9A9DA3;
+    --color-dashboard-text-lighter: #D9D9D9;
+
+    /* Sidebar colors */
+    --color-dashboard-sidebar-text: #6A6E76;
+    --color-dashboard-sidebar-logo: #242933;
+    --color-sidebar-profile-name: #000000;
+    --color-sidebar-profile-role: #6A6E76;
+
+    /* Dropdown */
+    --color-dropdown-outline: #F8F9FC;
+    --color-dropdown-border: #F2F4F7;
+    --color-dropdown-heading: #666666;
+
+    /* Business stats */
+    --color-business-stat-level: #C9CBCF;
+    --color-business-stat-currency: #6A6E76;
+    --color-business-stat-border: black;
+    --color-stat-level-1: #00B22D;
+    --color-stat-level-2: #E32900;
+
+    /* Table*/
+    --color-table-heading-bg: #F8F9FC;
+    --color-table-header: #F8F9FC;
+    --color-dropdown-shadow: rgba(148, 163, 184, 0.4);
+
+    /*Chat box*/
+    --color-chat-bg: var(--color-gray-011);
+    --color-chat-border: var(--color-gray-010);
+
+    /*Modal*/
+    --color-modal-heading: #000000;
+    --color-modal-subheading: #3B404A;
+
+    /*Tab*/
+    --color-tab-btn-border: #ECEEF3;
+    --color-tab-btn-bg: #FAFAFA;
+
+    /* Shimmer */
+    --color-shimmer-base: #fafbfc;
+    --color-shimmer-highlight: #f1f3f4;
+
+    /* Profile Card */
+    --color-profile-card-bg: #6fcfff64;
+    --color-profile-card-heading: #000000;
+    --color-profile-card-subtext: #3B404A;
+    --color-profile-card-subtext-2: #6A6E76;
+
+    /* Revenue Tracker */
+    --color-revenue-bar-one: #F2F4F7;
+    --color-revenue-bar-two: #F2F4F71C;
+
+    /* Empty State */
+    --empty-state-card-bg: #FFFFFF;
+    --empty-state-border: #E6E9EF;
+    --empty-state-placeholder: #ECEEF3;
+    --empty-state-icon: #DFE3EC;
+
+    /* Clock In Component */
+    --color-clockin-border: #E5E5FF;
+    --color-clockin-bg: #F8F9FC;
+    --color-clockin-ring: #CCD6EB;
+    --color-clockin-gradient-from: #FFFFFF;
+    --color-clockin-gradient-to: #E7EEFD;
+    --color-clockin-inner-gradient-from: #ECF0F8;
+    --color-clockin-inner-gradient-to: #FFFFFF;
+    --color-clockin-text: #3B404A;
+    --color-clockin-text-muted: #6A6E76;
+
+    /* Settings Card color*/
+    --color-settings-bg: #FCFCFC;
+}
+
+/* Dark Mode Theme Variables */
+html.dark {
+    /* Layout colors - Dark Mode */
+    --color-auth-bg: #002233;
+    --color-auth-heading: #FFFFFF;
+    --color-auth-subheading: #DFE3EC;
+    --color-input-label: #FFFFFF;
+    --color-input-text: #FFFFFF;
+    --color-input-placeholder: #9A9DA3;
+    --color-input-border: #003752;
+    --color-auth-pass-hide-btn: #002B40;
+    --color-auth-pass-hide-btn-text: #FFFFFF;
+    --color-auth-forgot-pass-container: #002B40;
+    --color-auth-forgot-pass-text: #DFE3EC;
+    --color-auth-forgot-pass-btn: #003752;
+    --color-auth-forgot-pass-btn-text: #FFFFFF;
+    --color-default-text: #FFFFFF;
+    --color-default-bg: #002233;
+
+    /* Dashboard colors - Dark Mode */
+    --color-dashboard-bg: #002233;
+    --color-dashboard-bg-dark: #002639;
+    --color-dashboard-bg-darker: #002B40;
+    --color-dashboard-card-border: #003752;
+    --color-dashboard-card-border-light: #002E45;
+    --color-dashboard-card-divider: #003752;
+    --color-dashboard-header-border: #003752;
+    --color-dashboard-input-border: #003752;
+    --color-dashboard-heading: #FFFFFF;
+    --color-dashboard-heading-blue: #E5F6FF;
+    --color-dashboard-text: #DFE3EC;
+    --color-dashboard-text-darker: #E5F6FF;
+    --color-dashboard-text-light: #9A9DA3;
+    --color-dashboard-text-lighter: #003752;
+
+    /* Sidebar colors - Dark Mode */
+    --color-dashboard-sidebar-text: #DFE3EC;
+    --color-dashboard-sidebar-logo: #FFFFFF;
+    --color-sidebar-profile-name: #FFFFFF;
+    --color-sidebar-profile-role: #9A9DA3;
+
+    /* Dropdown - Dark Mode */
+    --color-dropdown-outline: #002B40;
+    --color-dropdown-border: #003752;
+    --color-dropdown-heading: #9A9DA3;
+
+    /* Business stats - Dark Mode */
+    --color-business-stat-level: #003752;
+    --color-business-stat-currency: #DFE3EC;
+    --color-business-stat-border: #B2E5FF;
+
+    /* Table - Dark Mode */
+    --color-table-heading-bg: #002639;
+    --color-table-header: #002639;
+    --color-dropdown-shadow: rgba(0, 0, 0, 0.4);
+
+    /* Chat box - Dark Mode */
+    --color-chat-bg: #002639;
+    --color-chat-border: #003752;
+
+    /* Modal - Dark Mode */
+    --color-modal-heading: #FFFFFF;
+    --color-modal-subheading: #DFE3EC;
+
+    /* Tab - Dark Mode */
+    --color-tab-btn-border: #003752;
+    --color-tab-btn-bg: #002639;
+
+    /* Shimmer - Dark Mode */
+    --color-shimmer-base: #002B40;
+    --color-shimmer-highlight: #003752;
+
+    /* Profile Card */
+    --color-profile-card-bg: #002B40;
+    --color-profile-card-heading: #DFE3EC;
+    --color-profile-card-subtext: #B2E5FF;
+    --color-profile-card-subtext-2: #c3c6cd;
+
+    /* Revenue Tracker */
+    --color-revenue-bar-one: #182a3c;
+    --color-revenue-bar-two: #182a3c1c;
+
+    /* Empty State - Dark Mode */
+    --empty-state-card-bg: #002B40;
+    --empty-state-border: #003752;
+    --empty-state-placeholder: #003752;
+    --empty-state-icon: #4A6577;
+
+    /* Clock In Component - Dark Mode */
+    --color-clockin-border: #003752;
+    --color-clockin-bg: #002B40;
+    --color-clockin-ring: #004466;
+    --color-clockin-gradient-from: #003752;
+    --color-clockin-gradient-to: #002639;
+    --color-clockin-inner-gradient-from: #002B40;
+    --color-clockin-inner-gradient-to: #003752;
+    --color-clockin-text: #DFE3EC;
+    --color-clockin-text-muted: #9A9DA3;
+
+    /* Brand color overrides for dark mode */
+    --color-brand-color-013: #003D5C;
+
+    /* Settings Card color*/
+    --color-settings-bg: #002B40;
+}
+
+/* Global font application */
+html, body {
+    font-family: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--color-default-bg);
+    color: var(--color-default-text);
+}
+
+/* Ensure font-body class works */
+.font-body {
+    font-family: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+}
+
+/* Additional font loading optimizations */
+.font-heading {
+    font-family: 'TheLoveClub', serif !important;
+}
+
+.font-alternative {
+    font-family: 'Matter', sans-serif !important;
+}
+
+
+/* Collapsable Classes */
+.collapsable {
+  display: grid;
+  grid-template-rows: auto 0fr;
+  grid-template-columns: 1fr;
+  transition: grid-template-rows 0.3s ease;
+  overflow: hidden;
+}
+
+.collapsable.show {
+  grid-template-rows: auto 1fr !important;
+}
+
+.collapsable-content {
+  overflow: hidden;
+}
+
+/* Global Shimmer Animation */
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    var(--color-shimmer-base) 25%,
+    var(--color-shimmer-highlight) 50%,
+    var(--color-shimmer-base) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-brand-color-default);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-brand-color-004);
+}
+
+/* Firefox scrollbar support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brand-color-default) transparent;
+}
