@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { AppPinCode, Icon } from "#components";
+import { Icon } from "#components";
 
 const emit = defineEmits(["cancel"]);
+
+const props = withDefaults(
+  defineProps<{
+    containerMaxWidth?: number;
+  }>(),
+  {
+    containerMaxWidth: 500,
+  },
+);
 
 const cancel = () => {
   emit("cancel");
@@ -27,8 +36,21 @@ const cancel = () => {
       <!-- header end-->
 
       <!-- body -->
-      <slot></slot>
+      <section
+        class="inline-block w-full h-auto bg-dashboard-bg-dark border border-dashboard-card-border backdrop-blur-md rounded-4xl p-2 relative z-4"
+        :style="{
+          maxWidth: props.containerMaxWidth + 'px',
+        }"
+      >
+        <div
+          class="p-5 md:p-10 py-15! border w-full bg-dashboard-bg border-dashboard-card-border flex flex-col gap-5 rounded-3xl"
+        >
+          <slot></slot>
+        </div>
+      </section>
       <!-- body -->
+
+      <div></div>
     </div>
   </div>
 </template>
