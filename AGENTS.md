@@ -78,6 +78,7 @@ export interface IFeature {
   name: string;
 }
 
+/** Provides feature API state and actions. */
 export const useFeatureStore = () => {
   const endpoints = {
     FEATURES: "/admin/features",
@@ -97,6 +98,7 @@ export const useFeatureStore = () => {
   };
 
   const actions = {
+    /** Fetches the feature list and stores the response. */
     async fetchFeatures() {
       state.fetchingFeatures.value = true;
 
@@ -117,6 +119,7 @@ export const useFeatureStore = () => {
         });
     },
 
+    /** Creates a feature and appends it to the stored feature list. */
     async createFeature(payload: ICreateFeaturePayload) {
       state.creatingFeature.value = true;
 
@@ -149,6 +152,34 @@ export const useFeatureStore = () => {
 Use the existing `useAuthStore`, `useTransactionStore`, and `useFaqStore`
 implementations as the reference for this pattern. Preserve their architectural
 conventions, not unrelated endpoint details.
+
+## Form Validation
+
+- All form validation **MUST** use Vuelidate. Do not implement ad hoc validation
+  with manual boolean flags, standalone conditionals, or a different validation
+  library.
+- Define the form model as reactive state, declare Vuelidate rules with
+  validators from `@vuelidate/validators`, and create the validation state with
+  `useVuelidate` from `@vuelidate/core`.
+- Use `helpers.withMessage` to provide user-facing validation messages. Display
+  field errors through the relevant input component and touch fields on input,
+  blur, or another appropriate interaction.
+- On submission, call `$touch()` on the validation state and stop submission
+  when `$invalid` is true.
+- Use `layers/auth/components/Onboarding/SetPassword.vue` and
+  `/Users/sylvesternkeze/Documents/Projects/VentV2Frontend/layers/configurations/components/Config/Countries/Update.vue`
+  as the canonical references for Vuelidate rule composition, validation state,
+  error display, and submit handling.
+
+## Code Documentation
+
+- Every method, standalone function, function-valued variable, composable, and
+  class **MUST** have a concise comment that explains its purpose.
+- Prefer JSDoc/TSDoc comments (`/** ... */`) immediately above declarations.
+  Document parameters, return values, side effects, and thrown errors when they
+  are not already obvious from the signature.
+- Comments must describe intent or behavior; do not add filler comments that
+  merely restate the declaration name.
 
 ## API-Backed UI and Shimmers
 
@@ -196,6 +227,10 @@ Before handing off a feature, verify all applicable items:
       feature UI implementation.
 - [ ] Reusable atoms are in `app/components/App/`; reusable pure helpers are in
       `app/utils/helpers/`.
+- [ ] Every form uses Vuelidate, exposes useful validation messages, touches its
+      fields appropriately, and blocks invalid submission.
+- [ ] Every method, standalone function, function-valued variable, composable,
+      and class has a concise, meaningful documentation comment.
 - [ ] The feature has been checked in both light and dark modes.
 - [ ] Nuxt Icon SVGs are in `app/assets/icons/` and use the `vent:` prefix.
 - [ ] `npm run typecheck` passes for code changes governed by this document.

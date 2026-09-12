@@ -317,6 +317,12 @@
     --color-dashboard-text-darker: #001119;
     --color-dashboard-text-light: #9A9DA3;
     --color-dashboard-text-lighter: #D9D9D9;
+    --color-dashboard-chart-grid: #ECEEF3;
+    --color-dashboard-chart-track: #ECEEF3;
+    --color-dashboard-chart-verified: #FFF700;
+    --color-dashboard-chart-traded: #4DCE7B;
+    --color-dashboard-chart-volume: #00AAFE;
+    --color-dashboard-chart-count: #4DCE7B;
 
     /* Sidebar colors */
     --color-dashboard-sidebar-text: #6A6E76;
@@ -422,6 +428,12 @@ html.dark {
     --color-dashboard-text-darker: #E5F6FF;
     --color-dashboard-text-light: #9A9DA3;
     --color-dashboard-text-lighter: #003752;
+    --color-dashboard-chart-grid: #003752;
+    --color-dashboard-chart-track: #003752;
+    --color-dashboard-chart-verified: #FFF700;
+    --color-dashboard-chart-traded: #4DCE7B;
+    --color-dashboard-chart-volume: #00AAFE;
+    --color-dashboard-chart-count: #4DCE7B;
 
     /* Sidebar colors - Dark Mode */
     --color-dashboard-sidebar-text: #DFE3EC;

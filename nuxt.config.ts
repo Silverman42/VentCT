@@ -24,4 +24,9 @@ export default defineNuxtConfig({
         process.env.NUXT_PUBLIC_FLAGS_API_URL ?? process.env.FLAGS_API_URL,
     },
   },
+    typescript: {
+    tsConfig: {
+      include: ["../layers/**/*"],
+    },
+  },
 });
