@@ -9,6 +9,7 @@ const props = withDefaults(
     color?: "primary" | "secondary" | "neutral";
     rounded?: boolean;
     fullRounded?: boolean;
+    type?: "button" | "submit" | "reset";
   }>(),
   {
     block: false,
@@ -19,8 +20,13 @@ const props = withDefaults(
     color: "primary",
     rounded: true,
     fullRounded: false,
+    type: "submit",
   },
 );
+
+const emit = defineEmits<{
+  click: [event: MouseEvent];
+}>();
 
 const isOnline = useOnlineHandler().isOnline;
 
@@ -29,9 +35,13 @@ const getProps = computed(() => props);
 const disableButton = computed(() => {
   return getProps.value.disabled || getProps.value.loading;
 });
+
+// Emit clicks explicitly so component consumers can reliably attach button actions.
+const handleClick = (event: MouseEvent) => emit("click", event);
 </script>
 <template>
   <button
+    :type="props.type"
     class="btn"
     :class="{
       'w-full': getProps.block,
@@ -50,6 +60,7 @@ const disableButton = computed(() => {
       'btn-neutral-outlined': getProps.outlined && getProps.color === 'neutral',
     }"
     :disabled="disableButton || !isOnline"
+    @click="handleClick"
   >
     <!-- <span
       v-if="getProps.loading"

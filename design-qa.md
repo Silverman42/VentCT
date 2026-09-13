@@ -1,47 +1,67 @@
-# Campaign Export Modal Design QA
+# Promoters design QA
 
-## Comparison Target
+**Source visual truth path**
 
-- Source visual truth: `/Users/sylvesternkeze/Downloads/Export campaign.jpg`
-- Implementation: `http://127.0.0.1:3000/campaigns` → Export campaign data
-- Implementation screenshot: in-app browser capture (ephemeral capture; no filesystem path exposed by the browser adapter)
-- Desktop viewport: 1674 × 1114 CSS px, matching the source image dimensions; browser capture was reviewed at the same viewport without density normalization.
-- State: light theme, export modal open, XLSX selected, email delivery selected, first and fifth campaign fixtures selected, “All” report type, and both dates set to `2026-02-15`.
+- `/Users/sylvesternkeze/Downloads/Dashboard (5).png` — list
+- `/Users/sylvesternkeze/Downloads/Promoters Profile.png` — Transactions profile
+- `/Users/sylvesternkeze/Downloads/Promoters profile (2).png` — Audiences profile
+- `/Users/sylvesternkeze/Downloads/New Promoter.png` — New Promoter modal
+- `/Users/sylvesternkeze/Downloads/Edit Promoter.png` — Edit Profile modal
+- `/Users/sylvesternkeze/Downloads/Export Promoters.png` — Export modal
 
-## Evidence And Interaction Coverage
+**Implementation screenshot path**
 
-Full-view comparison confirmed the 580px modal width, centered lower-screen placement, white surface, rounded corners, subdued backdrop, two-option format and delivery controls, campaign selector, form fields, and two-button footer match the supplied reference composition.
+The rendered evidence was captured in the Codex in-app browser (its capture API is
+ephemeral and does not expose a filesystem path):
 
-Focused comparison covered the format controls, selected campaign rows, record-count summary, report-type control, dates, delivery controls, and close button. Existing Vent icons and semantic theme tokens are used; no substitute image or custom SVG artwork was introduced.
+- `http://127.0.0.1:3000/promoters`
+- `http://127.0.0.1:3000/promoters/mercy-adaeze?tab=transactions`
+- `http://127.0.0.1:3000/promoters/mercy-adaeze?tab=audiences`
 
-Browser checks completed:
+**Viewport and normalization**
 
-- New Campaign opens with a blank form, blocks invalid submission, focuses the name field, and acknowledges a valid local-only submission.
-- Export resets to the reference-backed defaults, supports select-all/clear-all and search-backed selection, validates empty campaign selection, and exposes its format, report, date, and delivery controls.
-- The export modal remains usable at 390 × 844: its content scrolls to reveal delivery and footer actions.
-- Dark and light themes were inspected. Browser console error check returned no errors.
+- Source images: supplied at 2511 px wide and rendered in the task at 1822–1838 × 1344 px.
+- Implementation: 1822 × 1344 CSS px in the in-app browser, light theme, browser/device scale 1.
+- Comparison: the same route state, content density, and light-token surface were reviewed at the normalized desktop viewport; full views and focused header, metric, table, and modal regions were inspected.
 
-## Required Fidelity Surfaces
+**States inspected**
 
-- **Fonts and typography:** Uses the application’s existing body font, weights, hierarchy, and compact labels; matches the reference’s campaign-admin visual language.
-- **Spacing and layout rhythm:** The modal is 580px wide on desktop and has a reference-aligned lower-centered placement, 20px content inset, scrollable campaign list, and responsive single-column mobile layout.
-- **Colors and visual tokens:** Uses existing dashboard, border, text, brand, and selected-state tokens in both themes.
-- **Image and asset fidelity:** The target contains only existing brand/UI imagery; the implementation reuses the registered `vent:` icon collection rather than adding placeholder artwork.
-- **Copy and content:** The prescribed headings, labels, actions, reference date, and local-only behavior are present. Record totals intentionally derive from the fixture `target` values, per the approved plan.
+- Promoters default list with five metric cards, first page, no filter.
+- Transactions (`?tab=transactions`) and Audiences (`?tab=audiences`) profile states at 7D.
+- New Promoter, Edit Profile, and Export overlays with their screenshot-backed defaults.
+- Debounced list search: `?search=Kay` produced two matching fixtures and page 1.
+- Modal Escape dismissal, query-backed tab state, profile routing, an unknown-ID return-to-list state, and an empty browser console error log.
+- Tablet viewport (768 × 1024): feature grids use their breakpoint layout and the existing dashboard shell preserves its inherited horizontal table treatment.
 
-## Findings
+**Findings**
 
-No actionable P0, P1, or P2 mismatches remain.
+- No actionable P0, P1, or P2 visual differences remain after the final comparison.
+- Fonts and typography: the existing Vent font stack, display hierarchy, table density, labels, and compact supporting copy match the source hierarchy. Form labels were moved above their controls to match the modal references.
+- Spacing and layout rhythm: the list grid, profile/referral band, tab/period row, metric-card counts, tables, and desktop modal widths align with the supplied states. Modal forms retain scroll-safe behavior at shorter browser heights.
+- Colors and visual tokens: backgrounds, borders, brand blue actions, selected tabs, positive/negative pills, and modal overlays use existing semantic theme tokens and retain dark-mode token support.
+- Image quality and assets: the generated Mercy portrait is a sharp square source, circularly masked without halos, and follows the professional portrait direction of the source. Existing Vent logo and icon assets are retained rather than re-created.
+- Copy and content: tabs use the agreed plural `Transactions` / `Audiences`; editing uses `Save changes`; fixture-only success messaging explicitly says no persistent action was taken.
 
-### Follow-up Polish
+**Comparison history**
 
-- [P3] Native date inputs render in the browser locale (`15/02/2026`) rather than the source image’s ISO display. The underlying value remains `2026-02-15`; use a custom date-display control only if exact visual formatting becomes a product requirement.
-- [P3] Fixture-derived record totals differ from the reference’s sample totals by design.
+1. [P2] The initial New/Edit forms used the shared input container, which visually grouped labels inside the field border; auto-focusing tall modal content also shifted the New/Export captures.
+   Fix: added `PromoterFormField.vue` for source-aligned standalone labels and removed modal auto-focus scrolling while retaining dialog keyboard focus for Escape.
+2. Post-fix evidence: re-captured all six states at 1822 × 1344. New/Edit labels, compact upload zone, action alignment, and Export modal density now match the supplied surfaces without obstructing controls.
 
-## Comparison History
+**Open Questions**
 
-1. Initial desktop capture showed the export dialog vertically too tall and centered too high because the shared modal’s close row consumed layout space.
-2. Updated `CampaignExportModal.vue` with scoped spacing/close-control overrides and a desktop positioning adjustment.
-3. Re-captured at 1674 × 1114: modal dimensions and placement now align with the reference; no P0/P1/P2 findings remain.
+- The shared dashboard shell intentionally retains its existing demo-admin avatar and navigation labels, per the request to leave global chrome unchanged. These are outside the Promoters layer and are not action items.
+- The browser capture tool returns ephemeral screenshots rather than writable PNG paths; the local implementation URLs above are the reproducible visual evidence.
+
+**Implementation Checklist**
+
+- [x] Compare all supplied list, detail-tab, and modal states at a normalized desktop viewport.
+- [x] Correct modal label hierarchy, compact image-upload treatment, modal focus/escape behavior, and action button semantics.
+- [x] Verify query restoration, profile routing, tabs, periods, search, table pagination, and local-only feedback behavior.
+- [x] Check browser console errors and production build output.
+
+**Follow-up Polish**
+
+- [P3] If the global dashboard shell is refreshed later, replace its demo profile avatar and legacy `Telescope` label to match the supplied chrome exactly.
 
 final result: passed
