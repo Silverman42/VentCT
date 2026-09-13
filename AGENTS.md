@@ -21,6 +21,10 @@ new code and when materially refactoring existing code.
 - Reusable atomic UI belongs in `app/components/App/`. Promote a component
   there before it is reused by another feature; do not create duplicate local
   versions of a shared atom.
+- Before implementing any basic UI control or layout, **MUST** search
+  `app/components/` for a suitable existing component. Reuse or extend that
+  component when possible; do not introduce raw or feature-local duplicates of
+  inputs, dropdowns, buttons, modals, tables, selectors, or similar primitives.
 - Reusable, pure helper functions belong in `app/utils/helpers/`. Keep helpers
   free of Vue component concerns and feature-specific state. Feature-only
   helpers stay inside the owning layer.
@@ -227,6 +231,8 @@ Before handing off a feature, verify all applicable items:
       feature UI implementation.
 - [ ] Reusable atoms are in `app/components/App/`; reusable pure helpers are in
       `app/utils/helpers/`.
+- [ ] `app/components/` was checked before implementing basic UI controls or
+      layouts, and suitable shared components were reused or extended.
 - [ ] Every form uses Vuelidate, exposes useful validation messages, touches its
       fields appropriately, and blocks invalid submission.
 - [ ] Every method, standalone function, function-valued variable, composable,

@@ -30,7 +30,7 @@ export const sidebarLinks: SidebarLink[][] = [
       type: "link",
       name: "Campaigns",
       icon: "vent:volume-high",
-      route: "/",
+      route: "/campaigns",
     },
     {
       type: "link",
@@ -46,7 +46,7 @@ export const sidebarLinks: SidebarLink[][] = [
     },
     {
       type: "link",
-      name: "Attendances",
+      name: "Audiences",
       icon: "vent:people",
       route: "/",
     },

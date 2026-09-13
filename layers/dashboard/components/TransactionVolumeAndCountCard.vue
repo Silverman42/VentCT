@@ -19,7 +19,7 @@ ChartJS.register(
   Tooltip,
 );
 
-const { transactionSeries } = useDashboardMockData();
+const { periodOptions, transactionSeries } = useDashboardMockData();
 const { chartTheme } = useDashboardChartTheme();
 const selectedPeriod = ref<DashboardPeriod>("1W");
 
@@ -106,7 +106,7 @@ const chartOptions = computed<ChartOptions<"bar">>(() => ({
           Verified users and trade performance stats
         </p>
       </div>
-      <DashboardPeriodSelector v-model="selectedPeriod" />
+      <AppPeriodSelector v-model="selectedPeriod" :options="periodOptions" />
     </header>
 
     <div class="mt-8 min-h-[410px] flex-1" aria-label="Transaction volume and count chart">

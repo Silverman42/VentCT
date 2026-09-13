@@ -10,7 +10,10 @@ import {
 } from "chart.js";
 import type { ChartData, ChartOptions } from "chart.js";
 import { Line } from "vue-chartjs";
-import type { DashboardPeriod } from "../composables/useDashboardMockData";
+import type {
+  CampaignPeriod,
+  CampaignPerformanceSeries,
+} from "../composables/useCampaignMockData";
 
 ChartJS.register(
   CategoryScale,
@@ -21,12 +24,23 @@ ChartJS.register(
   Tooltip,
 );
 
-const { periodOptions, verificationSeries } = useDashboardMockData();
+const props = defineProps<{
+  performance: Record<CampaignPeriod, CampaignPerformanceSeries>;
+}>();
+
 const { chartTheme } = useDashboardChartTheme();
-const selectedPeriod = ref<DashboardPeriod>("1W");
+const selectedPeriod = ref<CampaignPeriod>("7D");
+const periodOptions: Array<{ label: CampaignPeriod; value: CampaignPeriod }> = [
+  { label: "7D", value: "7D" },
+  { label: "30D", value: "30D" },
+  { label: "90D", value: "90D" },
+  { label: "12M", value: "12M" },
+];
 
-const activeSeries = computed(() => verificationSeries[selectedPeriod.value]);
+/** Resolves the fixture series for the reporting window selected by the user. */
+const activeSeries = computed(() => props.performance[selectedPeriod.value]);
 
+/** Maps campaign verification data into the Chart.js line-chart shape. */
 const chartData = computed<ChartData<"line">>(() => ({
   labels: activeSeries.value.labels,
   datasets: [
@@ -55,6 +69,7 @@ const chartData = computed<ChartData<"line">>(() => ({
   ],
 }));
 
+/** Configures a theme-aware, responsive Chart.js rendering for campaign data. */
 const chartOptions = computed<ChartOptions<"line">>(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -95,30 +110,29 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
 
 <template>
   <section
-    class="flex min-h-[455px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-6"
-    aria-labelledby="verification-performance-title"
+    class="flex min-h-[455px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5 md:p-6"
+    aria-labelledby="campaign-performance-title"
   >
     <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h2
-          id="verification-performance-title"
-          class="text-base font-medium tracking-tight text-dashboard-heading"
-        >
+        <h2 id="campaign-performance-title" class="text-base font-medium tracking-tight text-dashboard-heading">
           Verification vs Trade Performance
         </h2>
-        <p class="mt-1 text-xs text-dashboard-text">
-          Verified users and trade performance stats
-        </p>
+        <p class="mt-1 text-xs text-dashboard-text">Verified users and trade performance stats</p>
       </div>
-      <AppPeriodSelector v-model="selectedPeriod" :options="periodOptions" />
+      <AppPeriodSelector
+        v-model="selectedPeriod"
+        :options="periodOptions"
+        aria-label="Campaign reporting period"
+      />
     </header>
 
-    <div class="mt-8 min-h-[275px] flex-1" aria-label="Verification and trade performance chart">
+    <div class="mt-8 min-h-[275px] flex-1" aria-label="Campaign verification and trade performance chart">
       <ClientOnly>
         <Line
           :data="chartData"
           :options="chartOptions"
-          aria-label="Line chart comparing verified users with users that traded"
+          aria-label="Line chart comparing verified campaign audience with audience members that traded"
           role="img"
         />
         <template #fallback>

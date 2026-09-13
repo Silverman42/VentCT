@@ -1,18 +1,31 @@
-<script setup lang="ts">
-import type { DashboardPeriod } from "../composables/useDashboardMockData";
+<script setup lang="ts" generic="T extends string | number">
+type PeriodSelectorValue = string | number;
 
-const props = defineProps<{
-  modelValue: DashboardPeriod;
-}>();
+interface PeriodSelectorOption<TValue extends PeriodSelectorValue> {
+  label: string;
+  value: TValue;
+}
+
+const props = withDefaults(
+  defineProps<{
+    /** Accessible description of the selector group. */
+    ariaLabel?: string;
+    /** Currently selected period value. */
+    modelValue: T;
+    /** Period options available to select. */
+    options: PeriodSelectorOption<T>[];
+  }>(),
+  {
+    ariaLabel: "Reporting period",
+  },
+);
 
 const emit = defineEmits<{
-  "update:modelValue": [period: DashboardPeriod];
+  "update:modelValue": [period: T];
 }>();
 
-const { periodOptions } = useDashboardMockData();
-
-/** Emits a selected reporting window to the containing chart card. */
-const selectPeriod = (period: DashboardPeriod) => {
+/** Emits the reporting window selected by the user. */
+const selectPeriod = (period: T) => {
   emit("update:modelValue", period);
 };
 </script>
@@ -20,11 +33,11 @@ const selectPeriod = (period: DashboardPeriod) => {
 <template>
   <div
     class="inline-flex items-center gap-0.5 rounded-full bg-dashboard-bg-dark p-0.5"
-    aria-label="Reporting period"
+    :aria-label="props.ariaLabel"
     role="group"
   >
     <button
-      v-for="period in periodOptions"
+      v-for="period in props.options"
       :key="period.value"
       class="min-w-9 cursor-pointer rounded-full px-2.5 py-1 text-xs text-dashboard-text transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-color-default/40"
       :class="{

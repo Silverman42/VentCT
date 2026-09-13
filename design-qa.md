@@ -1,33 +1,47 @@
-# Dashboard design QA
+# Campaign Export Modal Design QA
 
-## Comparison target
+## Comparison Target
 
-- Source visual: `/Users/sylvesternkeze/Downloads/Container (1).png`.
-- Source dimensions: 1542 × 1456 px, RGBA PNG.
-- Implementation evidence: in-app browser capture of `/dashboard` in the active task.
-- Browser viewport: 1866 × 1456 CSS px at device scale factor 1; the expanded 260 px sidebar and 32 px main padding on each side leave a 1542 px dashboard-content region.
-- Compared state: light theme, both chart cards set to `1W`.
+- Source visual truth: `/Users/sylvesternkeze/Downloads/Export campaign.jpg`
+- Implementation: `http://127.0.0.1:3000/campaigns` → Export campaign data
+- Implementation screenshot: in-app browser capture (ephemeral capture; no filesystem path exposed by the browser adapter)
+- Desktop viewport: 1674 × 1114 CSS px, matching the source image dimensions; browser capture was reviewed at the same viewport without density normalization.
+- State: light theme, export modal open, XLSX selected, email delivery selected, first and fifth campaign fixtures selected, “All” report type, and both dates set to `2026-02-15`.
 
-## Full-view comparison
+## Evidence And Interaction Coverage
 
-The dashboard-content region preserves the reference's three-column summary grid, five/two-column middle split, full-width grouped bar chart, white cards, fine gray borders, compact Figtree typography, and yellow/green plus blue/green chart treatments. The existing sidebar and utility bar remain intentionally outside the supplied page-content reference.
+Full-view comparison confirmed the 580px modal width, centered lower-screen placement, white surface, rounded corners, subdued backdrop, two-option format and delivery controls, campaign selector, form fields, and two-button footer match the supplied reference composition.
 
-## Focused checks
+Focused comparison covered the format controls, selected campaign rows, record-count summary, report-type control, dates, delivery controls, and close button. Existing Vent icons and semantic theme tokens are used; no substitute image or custom SVG artwork was introduced.
 
-- Typography and copy: all card labels, values, subtitles, legends, and promoter figures match the supplied `1W` reference data.
-- Layout rhythm: summary cards use a two-row three-column desktop grid; the middle cards retain the intended 5/7 split; tablet and mobile collapse without overflow.
-- Colors and tokens: card, border, text, progress, and chart colors resolve from light/dark dashboard CSS tokens. Verified in both themes.
-- Charts: Chart.js line and grouped bar canvases render with dashed horizontal guides, correct legends, accessible labels, and stable client-only fallbacks.
-- Interactions: independently exercised `1D`, `1W`, `2W`, and `1M` on each chart; the active selector state changed correctly and the browser console reported no errors.
+Browser checks completed:
+
+- New Campaign opens with a blank form, blocks invalid submission, focuses the name field, and acknowledges a valid local-only submission.
+- Export resets to the reference-backed defaults, supports select-all/clear-all and search-backed selection, validates empty campaign selection, and exposes its format, report, date, and delivery controls.
+- The export modal remains usable at 390 × 844: its content scrolls to reveal delivery and footer actions.
+- Dark and light themes were inspected. Browser console error check returned no errors.
+
+## Required Fidelity Surfaces
+
+- **Fonts and typography:** Uses the application’s existing body font, weights, hierarchy, and compact labels; matches the reference’s campaign-admin visual language.
+- **Spacing and layout rhythm:** The modal is 580px wide on desktop and has a reference-aligned lower-centered placement, 20px content inset, scrollable campaign list, and responsive single-column mobile layout.
+- **Colors and visual tokens:** Uses existing dashboard, border, text, brand, and selected-state tokens in both themes.
+- **Image and asset fidelity:** The target contains only existing brand/UI imagery; the implementation reuses the registered `vent:` icon collection rather than adding placeholder artwork.
+- **Copy and content:** The prescribed headings, labels, actions, reference date, and local-only behavior are present. Record totals intentionally derive from the fixture `target` values, per the approved plan.
 
 ## Findings
 
-No actionable P0, P1, or P2 differences remain. The surrounding product chrome is intentionally retained because this is a dashboard page inside the existing application layout.
+No actionable P0, P1, or P2 mismatches remain.
 
-## Verification history
+### Follow-up Polish
 
-1. Initial desktop and dark-theme captures confirmed the responsive grid, charts, and theme-aware canvas colors.
-2. Mobile review exposed a stale heading placeholder in the route shell; it was removed so the page renders only the requested dashboard components.
-3. Rechecked desktop light theme, tablet 1024 px layout, and mobile 390 px layout after the fix. No overflow, visual regressions, or console errors were observed.
+- [P3] Native date inputs render in the browser locale (`15/02/2026`) rather than the source image’s ISO display. The underlying value remains `2026-02-15`; use a custom date-display control only if exact visual formatting becomes a product requirement.
+- [P3] Fixture-derived record totals differ from the reference’s sample totals by design.
+
+## Comparison History
+
+1. Initial desktop capture showed the export dialog vertically too tall and centered too high because the shared modal’s close row consumed layout space.
+2. Updated `CampaignExportModal.vue` with scoped spacing/close-control overrides and a desktop positioning adjustment.
+3. Re-captured at 1674 × 1114: modal dimensions and placement now align with the reference; no P0/P1/P2 findings remain.
 
 final result: passed
