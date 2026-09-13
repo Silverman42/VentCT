@@ -22,6 +22,7 @@ const showDialogBox = () => {
   isOpen.value = true;
   // Use show() instead of showModal() to avoid top layer
   dialogBox.value?.show();
+  nextTick(() => dialogBox.value?.focus());
 };
 
 const hideDialogBox = () => {
@@ -83,6 +84,7 @@ defineExpose({
 
     <dialog
       ref="dialogBox"
+      tabindex="-1"
       class="dialog-box w-full md:w-[var(--desktop-width)]"
       :style="{
         '--desktop-width': props.desktopWidth,

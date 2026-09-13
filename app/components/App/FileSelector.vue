@@ -3,10 +3,12 @@ const props = withDefaults(
   defineProps<{
     allowedTypes?: string[];
     maxSizeInMb?: number;
+    variant?: "default" | "compact";
   }>(),
   {
     allowedTypes: () => ["image/png", "image/jpeg", "image/jpg"],
     maxSizeInMb: 1,
+    variant: "default",
   },
 );
 
@@ -36,6 +38,9 @@ const instructionText = computed(() => {
       return ext ? ext.toUpperCase() : type;
     })
     .join(", ");
+  if (props.variant === "compact") {
+    return `${extensions} · Max ${props.maxSizeInMb} MB`;
+  }
   return `Upload a ${extensions} file. Maximum size ${props.maxSizeInMb}mb.`;
 });
 
@@ -155,14 +160,17 @@ onUnmounted(() => {
      autocomplete="new-password-no-autofill" />
 
     <!-- File selection box -->
-    <div
+    <button
       v-if="!modelValue"
-      class="border border-dashed h-[320px] w-full rounded-2xl cursor-pointer transition-colors"
-      :class="
+      type="button"
+      aria-label="Choose a file to upload"
+      class="border border-dashed w-full rounded-2xl cursor-pointer transition-colors"
+      :class="[
+        props.variant === 'compact' ? 'h-44' : 'h-[320px]',
         isDragging
           ? 'border-brand-color-default bg-brand-primary-001'
-          : 'border-dashboard-card-border-light'
-      "
+          : 'border-dashboard-card-border-light',
+      ]"
       @click="triggerFileInput"
       @dragover="handleDragOver"
       @dragleave="handleDragLeave"
@@ -172,11 +180,22 @@ onUnmounted(() => {
       <div
         class="w-full h-full flex flex-col items-center justify-center gap-4"
       >
-        <img src="/img/image-upload.svg" class="w-[58px]" alt="" />
-        <div class="flex flex-col items-center gap-2">
+        <Icon
+          name="vent:direct-inbox"
+          size="2rem"
+          class="text-brand-color-default"
+          aria-hidden="true"
+        />
+        <div class="flex flex-col items-center gap-1.5">
           <h5 class="text-dashboard-heading text-center text-[13px]">
-            Click to add a file or drag and drop
+            {{ props.variant === "compact" ? "Drop your image here" : "Click to add a file or drag and drop" }}
           </h5>
+          <p
+            v-if="props.variant === 'compact'"
+            class="text-brand-color-default text-center text-[13px]"
+          >
+            or click to browse
+          </p>
           <!-- instruction text -->
           <p class="text-dashboard-text-light text-center text-[13px]">
             {{ instructionText }}
@@ -185,7 +204,7 @@ onUnmounted(() => {
         </div>
       </div>
       <!-- placeholder end -->
-    </div>
+    </button>
     <!-- File selection box end -->
 
     <!-- selected file section -->
@@ -196,13 +215,19 @@ onUnmounted(() => {
       >
         <!-- selected image snippet -->
         <img
+          v-if="isImageFile && filePreviewUrl"
           :src="
-            isImageFile && filePreviewUrl
-              ? filePreviewUrl
-              : '/img/image-upload.svg'
+            filePreviewUrl
           "
           class="w-[35px] h-[35px] shrink-0 rounded object-cover"
           alt=""
+        />
+        <Icon
+          v-else
+          name="vent:direct-inbox"
+          size="1.3rem"
+          class="w-[35px] h-[35px] shrink-0 rounded border border-dashboard-card-border p-2 text-dashboard-text"
+          aria-hidden="true"
         />
         <!-- selected image snippet end -->
         <div
@@ -224,6 +249,7 @@ onUnmounted(() => {
 
         <!-- Remove button -->
         <button
+          type="button"
           class="w-6 h-10 flex items-center text-orange-008 hover:text-orange-default justify-center"
           @click="removeFile"
         >
@@ -235,6 +261,7 @@ onUnmounted(() => {
       <div class="p-3 flex items-center justify-end md:justify-start gap-2">
         <!-- Replace button -->
         <button
+          type="button"
           class="flex items-center gap-2 text-sm text-brand-color-008 hover:text-brand-color-default"
           @click="replaceFile"
         >

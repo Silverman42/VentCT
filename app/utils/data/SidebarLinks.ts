@@ -36,7 +36,7 @@ export const sidebarLinks: SidebarLink[][] = [
       type: "link",
       name: "Promoters",
       icon: "vent:profile-add",
-      route: "/",
+      route: "/promoters",
     },
     {
       type: "link",
