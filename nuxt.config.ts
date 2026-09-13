@@ -17,6 +17,24 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
   },
+  app: {
+    head: {
+      link: [
+        {
+          href: "/favicon.svg",
+          type: "image/svg+xml",
+          rel: "icon",
+        },
+      ],
+      title: "Vent",
+      meta: [
+        {
+          name: "theme-color",
+          content: "#001119",
+        },
+      ],
+    },
+  },
   runtimeConfig: {
     apiBaseUrl: process.env.NUXT_API_BASE_URL ?? process.env.API_BASE_URL,
     public: {
