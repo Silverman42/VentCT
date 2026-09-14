@@ -76,6 +76,7 @@ const toggglePasswordVisibility = () => {
 .input-body:deep(input[type="password"]),
 .input-body:deep(input[type="date"]),
 .input-body:deep(input[type="tel"]),
+.input-body:deep(input[type="url"]),
 .input-body:deep(input[type="time"]) {
   @apply w-full flex-grow placeholder:text-input-placeholder text-base text-input-text outline-none bg-transparent font-medium;
 }

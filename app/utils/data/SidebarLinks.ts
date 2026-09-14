@@ -68,7 +68,7 @@ export const sidebarLinks: SidebarLink[][] = [
       type: "link",
       name: "Deep Links",
       icon: "vent:link-2",
-      route: "/",
+      route: "/deep-links",
     },
     {
       type: "link",
