@@ -20,11 +20,11 @@ const searchValue = ref("");
 
 const emits = defineEmits(["optionSelected"]);
 
-const selectedValue = defineModel<ListData>("selectedValue", {
-  default: {
+const selectedValue = defineModel<ListData>({
+  default: () => ({
     id: "",
     name: "",
-  },
+  }),
 });
 
 const filterList = computed(() => {

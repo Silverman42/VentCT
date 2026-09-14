@@ -58,7 +58,7 @@ export const sidebarLinks: SidebarLink[][] = [
       type: "link",
       name: "Admins",
       icon: "vent:people",
-      route: "/",
+      route: "/admins",
     },
     {
       type: "heading",
