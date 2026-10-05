@@ -269,6 +269,11 @@ onMounted(() => refreshSelectAllState());
 
 <template>
   <div class="flex min-w-0 w-full flex-col gap-6">
+    <AppHeading
+      title="Promoters"
+      subtitle="Manage and monitor promoters performance"
+    />
+
     <section
       class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
       aria-label="Promoter summary metrics"

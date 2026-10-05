@@ -1,10 +1,25 @@
 import type { ITableBodyData } from "~/utils/types/misc/TableComponent";
 
 /** Controls the detail dashboard content visible for a promoter. */
-export type PromoterDetailTab = "transactions" | "audiences";
+export type PromoterDetailTab =
+  | "audiences"
+  | "transactions"
+  | "withdrawal"
+  | "utility";
 
 /** Defines the selectable reporting windows in the promoter detail dashboard. */
-export type PromoterPeriod = "1d" | "7d" | "2w" | "1m";
+export type PromoterPeriod = "today" | "7d" | "30d" | "90d";
+
+/** Lists the reporting windows offered by the promoter period dropdown. */
+export const promoterPeriodOptions: Array<{
+  label: string;
+  value: PromoterPeriod;
+}> = [
+  { label: "Today", value: "today" },
+  { label: "Last 7 days", value: "7d" },
+  { label: "Last 30 days", value: "30d" },
+  { label: "Last 90 days", value: "90d" },
+];
 
 /** Represents the visible verification and transaction filtering choices. */
 export type PromoterAudienceFilter =
@@ -53,8 +68,8 @@ export interface PromoterDetails {
     appLink: string;
     webLink: string;
   };
-  transactionMetrics: PromoterMetric[];
-  audienceMetrics: PromoterMetric[];
+  /** Metric cards per tab; each inner array renders as one grid row. */
+  metricRows: Record<PromoterDetailTab, PromoterMetric[][]>;
   audience: PromoterAudienceMember[];
 }
 
@@ -133,21 +148,42 @@ const audience: PromoterAudienceMember[] = [
   { id: "audience-26", name: "Ruth", campaign: campusCampaign, email: "ruth@gmail.com", phone: "08071715904", hasTransaction: false, isVerified: false },
 ];
 
-const transactionMetrics: PromoterMetric[] = [
-  { label: "Total Transactions", value: "6", description: "Transaction count for this promoter" },
-  { label: "Successful Transactions", value: "6", description: "Number of successful transactions" },
-  { label: "This Week Transactions", value: "1", description: "Transactions this week" },
-  { label: "EazyPay Volume", value: "$1,792", description: "EazyPay volume for this promoter" },
-  { label: "Safewallet Volume", value: "$1,792", description: "Safewallet volume for this promoter" },
-  { label: "Total Trading Volume", value: "$1,792", description: "Total trading volume for this promoter" },
-];
-
-const audienceMetrics: PromoterMetric[] = [
-  { label: "Total Audience", value: "26", description: "Total number of audience for this promoter" },
-  { label: "Registered Audience", value: "20", description: "Number of registered audience" },
-  { label: "Verified Audience", value: "12", description: "Total verified audience" },
-  { label: "Audience with Transaction", value: "1", description: "Number of audience with transactions" },
-];
+const metricRows: Record<PromoterDetailTab, PromoterMetric[][]> = {
+  audiences: [
+    [
+      { label: "Total Audience", value: "26", description: "Total number of audience for this promoter" },
+      { label: "Verified Audience", value: "20", description: "Number of verified audience" },
+      { label: "Unverified Audience", value: "12", description: "Number of unverified audience" },
+      { label: "Audience with Transaction", value: "1", description: "Number of audience with transactions" },
+    ],
+  ],
+  transactions: [
+    [
+      { label: "Total Volume", value: "$10,792", description: "EasyPay and SafeWallet volume" },
+      { label: "Transaction counts", value: "220", description: "Total counts for all transactions" },
+    ],
+    [
+      { label: "EasyPay Volume", value: "$5,792", description: "100 transactions completed" },
+      { label: "SafeWallet Volume", value: "$5,000", description: "120 transactions completed" },
+      { label: "SafeWallet Cash Volume", value: "$2,000", description: "60 transactions completed" },
+      { label: "SafeWallet Crypto Volume", value: "$3,000", description: "60 transactions completed" },
+    ],
+  ],
+  withdrawal: [
+    [
+      { label: "Total Withdrawal", value: "$23,000", description: "100 transactions completed" },
+      { label: "Cash Withdrawal", value: "$13,000", description: "62 transactions completed" },
+      { label: "Crypto Withdrawal", value: "$10,000", description: "38 transactions completed" },
+    ],
+  ],
+  utility: [
+    [
+      { label: "Total Utility Volume", value: "$1,000", description: "261 transactions completed" },
+      { label: "Airtime", value: "$600", description: "150 transactions completed" },
+      { label: "Data", value: "$400", description: "111 transactions completed" },
+    ],
+  ],
+};
 
 const campaignOptions = Array.from(
   new Set(promoters.map((promoter) => promoter.campaign)),
@@ -168,8 +204,7 @@ const getPromoterDetails = (id: string): PromoterDetails | undefined => {
       appLink: `https://vent.africa.app.link/CH3BsJBE04b?ref=${promoter.referralCode}`,
       webLink: `https://dashboard.vent.africa/auth/sign-up?ref=${promoter.referralCode}`,
     },
-    transactionMetrics,
-    audienceMetrics,
+    metricRows,
     audience,
   };
 };

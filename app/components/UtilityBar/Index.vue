@@ -1,25 +1,5 @@
 <script setup lang="ts">
 const { openSidebar } = useSidebarHandler();
-const route = useRoute();
-
-/** Supplies the screenshot-matched page heading for promoters routes only. */
-const promoterHeading = computed(() => {
-  if (route.path === "/promoters") {
-    return {
-      title: "Promoters",
-      subtitle: "Manage and monitor promoters performance",
-    };
-  }
-
-  if (route.path.startsWith("/promoters/")) {
-    return {
-      title: "Promoters Profile",
-      subtitle: "Manage and monitor promoters performance",
-    };
-  }
-
-  return null;
-});
 </script>
 
 <template>
@@ -36,13 +16,7 @@ const promoterHeading = computed(() => {
         <Icon name="vent:menu" size="1.3rem" />
       </button>
 
-      <AppHeading
-        v-if="promoterHeading"
-        :title="promoterHeading.title"
-        :subtitle="promoterHeading.subtitle"
-      />
-
-      <div v-else class="hidden md:inline-block">
+      <div class="hidden md:inline-block">
         <button
           class="flex cursor-pointer item-center w-80 gap-2 px-2 py-2 rounded-full border hover:border-brand-color-default hover:ring-brand-color-010/40 ring-4 ring-transparent text-dashboard-text-light border-dashboard-card-border transition ease-in-out duration-300"
         >

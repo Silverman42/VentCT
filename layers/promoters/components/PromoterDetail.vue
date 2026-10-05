@@ -2,10 +2,12 @@
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
 import type { ITableHeaderData } from "~/utils/types/misc/TableComponent";
-import type {
-  PromoterAudienceFilter,
-  PromoterDetailTab,
-  PromoterPeriod,
+import type { TabsData } from "~/utils/types/misc/Tabs";
+import {
+  promoterPeriodOptions,
+  type PromoterAudienceFilter,
+  type PromoterDetailTab,
+  type PromoterPeriod,
 } from "../composables/usePromoterMockData";
 
 interface ModalController {
@@ -22,6 +24,7 @@ const route = useRoute();
 const router = useRouter();
 const editPromoterModal = ref<ModalController | null>(null);
 const audienceDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const periodDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const searchInput = ref("");
 const audienceSearch = ref("");
 const audienceFilter = ref<PromoterAudienceFilter>("all");
@@ -37,12 +40,27 @@ const tableHeadings: ITableHeaderData[] = [
   { id: "status", name: "Status", width: "14%" },
 ];
 
-const periodOptions: Array<{ label: string; value: PromoterPeriod }> = [
-  { label: "1D", value: "1d" },
-  { label: "7D", value: "7d" },
-  { label: "2W", value: "2w" },
-  { label: "1M", value: "1m" },
+const detailTabs: Array<TabsData & { id: PromoterDetailTab }> = [
+  { id: "audiences", name: "Audiences" },
+  { id: "transactions", name: "Transactions" },
+  { id: "withdrawal", name: "Withdrawal" },
+  { id: "utility", name: "Utility" },
 ];
+
+const audienceFilterOptions: Array<{
+  value: PromoterAudienceFilter;
+  label: string;
+}> = [
+  { value: "all", label: "All" },
+  { value: "verified", label: "Verified" },
+  { value: "not-verified", label: "Not verified" },
+  { value: "with-transaction", label: "With transaction" },
+  { value: "without-transaction", label: "Without transaction" },
+];
+
+const tablePageSize = 5;
+const defaultTab: PromoterDetailTab = "audiences";
+const defaultPeriod: PromoterPeriod = "30d";
 
 /** Reads one scalar value from a Nuxt query-string value. */
 const getQueryValue = (
@@ -57,11 +75,11 @@ const getQueryValue = (
 
 /** Identifies a supported detail dashboard tab from a query-string value. */
 const isPromoterDetailTab = (value: string): value is PromoterDetailTab =>
-  value === "transactions" || value === "audiences";
+  detailTabs.some((tab) => tab.id === value);
 
 /** Identifies a supported reporting period from a query-string value. */
 const isPromoterPeriod = (value: string): value is PromoterPeriod =>
-  periodOptions.some((period) => period.value === value);
+  promoterPeriodOptions.some((period) => period.value === value);
 
 /** Normalizes the visible tab and period controls from the current route. */
 const getRouteState = (): {
@@ -72,13 +90,13 @@ const getRouteState = (): {
   const requestedPeriod = getQueryValue(route.query.period);
 
   return {
-    tab: isPromoterDetailTab(requestedTab) ? requestedTab : "transactions",
-    period: isPromoterPeriod(requestedPeriod) ? requestedPeriod : "7d",
+    tab: isPromoterDetailTab(requestedTab) ? requestedTab : defaultTab,
+    period: isPromoterPeriod(requestedPeriod) ? requestedPeriod : defaultPeriod,
   };
 };
 
 const initialRouteState = getRouteState();
-const activeTab = ref<PromoterDetailTab>(initialRouteState.tab);
+const activeTab = ref<string>(initialRouteState.tab);
 const activePeriod = ref<PromoterPeriod>(initialRouteState.period);
 
 /** Resolves profile fixtures and makes a missing promoter explicit to the template. */
@@ -97,39 +115,20 @@ const profile = computed(() => {
   };
 });
 
-/** Chooses the screenshot-matched metric set for the active dashboard tab. */
-const activeMetrics = computed(() => {
-  const details = promoterDetails.value;
-  if (!details) return [];
-
-  return activeTab.value === "transactions"
-    ? details.transactionMetrics
-    : details.audienceMetrics;
-});
-
-/** Limits the audience view to five rows and the transactions view to ten. */
-const tablePageSize = computed(() =>
-  activeTab.value === "audiences" ? 5 : 10,
+/** Resolves the dropdown label for the selected reporting period. */
+const activePeriodLabel = computed(
+  () =>
+    promoterPeriodOptions.find((period) => period.value === activePeriod.value)
+      ?.label ?? "Last 30 days",
 );
 
-/** Returns filter options appropriate to the active tab's primary metric. */
-const audienceFilterOptions = computed<
-  Array<{ value: PromoterAudienceFilter; label: string }>
->(() => {
-  if (activeTab.value === "transactions") {
-    return [
-      { value: "all", label: "All" },
-      { value: "with-transaction", label: "With transaction" },
-      { value: "without-transaction", label: "Without transaction" },
-    ];
-  }
-
-  return [
-    { value: "all", label: "All" },
-    { value: "verified", label: "Verified" },
-    { value: "not-verified", label: "Not verified" },
-  ];
-});
+/** Resolves the dropdown label for the selected audience filter. */
+const activeAudienceFilterLabel = computed(
+  () =>
+    audienceFilterOptions.find(
+      (option) => option.value === audienceFilter.value,
+    )?.label ?? "All",
+);
 
 /** Debounces table searching until the user pauses typing. */
 const updateAudienceSearch = useDebounceFn((value: string) => {
@@ -165,20 +164,21 @@ const filteredAudience = computed(() => {
 
 /** Calculates the final valid audience table page after a search or filter change. */
 const audienceLastPage = computed(() =>
-  Math.max(1, Math.ceil(filteredAudience.value.length / tablePageSize.value)),
+  Math.max(1, Math.ceil(filteredAudience.value.length / tablePageSize)),
 );
 
 /** Selects the audience rows visible on the current page. */
 const pagedAudience = computed(() => {
-  const start = (audiencePage.value - 1) * tablePageSize.value;
-  return filteredAudience.value.slice(start, start + tablePageSize.value);
+  const start = (audiencePage.value - 1) * tablePageSize;
+  return filteredAudience.value.slice(start, start + tablePageSize);
 });
 
 /** Keeps the current tab and period URL compact while preserving defaults implicitly. */
 const syncRouteState = (): void => {
   const nextQuery: Record<string, string> = {};
-  if (activeTab.value !== "transactions") nextQuery.tab = activeTab.value;
-  if (activePeriod.value !== "7d") nextQuery.period = activePeriod.value;
+  if (activeTab.value !== defaultTab) nextQuery.tab = activeTab.value;
+  if (activePeriod.value !== defaultPeriod)
+    nextQuery.period = activePeriod.value;
 
   const currentQuery = {
     tab: getQueryValue(route.query.tab),
@@ -204,11 +204,10 @@ const applyRouteState = (): void => {
   isApplyingRoute.value = false;
 };
 
-/** Selects a dashboard tab, resets table state, and persists the choice to the route. */
-const selectTab = (tab: PromoterDetailTab): void => {
-  activeTab.value = tab;
-  audienceFilter.value = "all";
-  audiencePage.value = 1;
+/** Selects a reporting period and closes the period dropdown menu. */
+const selectPeriod = (period: PromoterPeriod): void => {
+  activePeriod.value = period;
+  periodDropdown.value?.closeDropdown();
 };
 
 /** Selects an audience filter and closes the associated dropdown menu. */
@@ -240,8 +239,8 @@ watch(
 );
 
 watch(
-  [tablePageSize, audienceLastPage],
-  ([, lastPage]) => {
+  audienceLastPage,
+  (lastPage) => {
     if (audiencePage.value > lastPage) audiencePage.value = lastPage;
   },
   { immediate: true },
@@ -251,8 +250,13 @@ watch(
 <template>
   <div
     v-if="profile && promoterDetails"
-    class="flex min-w-0 w-full flex-col gap-6 pt-5"
+    class="flex min-w-0 w-full flex-col gap-6"
   >
+    <AppHeading
+      title="Promoters Profile"
+      subtitle="Manage and monitor promoters performance"
+    />
+
     <section
       class="flex flex-col gap-4 border-b border-dashboard-card-border pb-6 md:flex-row md:items-center md:justify-between"
     >
@@ -287,15 +291,17 @@ watch(
           </div>
         </div>
       </div>
-      <button
+      <AppButton
         type="button"
-        class="inline-flex h-10 w-auto shrink-0 items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-4 text-dashboard-text transition hover:border-brand-color-default hover:text-brand-color-default"
+        size="sm"
+        color="primary"
+        class="w-fit shrink-0 !px-5 !py-2.5"
         aria-label="Edit promoter profile"
         @click="openEditPromoterModal"
       >
         <Icon name="vent:profile-add" size="1.1rem" />
-        <span class="text-sm">Edit</span>
-      </button>
+        Edit Profile
+      </AppButton>
     </section>
 
     <section
@@ -327,146 +333,149 @@ watch(
       </div>
     </section>
 
-    <section class="border-b border-dashboard-card-border pb-4">
-      <div
-        class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div
-          class="inline-flex w-fit items-center rounded-xl bg-dashboard-bg-dark p-1"
-          role="tablist"
-          aria-label="Promoter dashboard"
-        >
-          <button
-            v-for="tab in [
-              { value: 'transactions', label: 'Transactions' },
-              { value: 'audiences', label: 'Audiences' },
-            ] as const"
-            :key="tab.value"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === tab.value"
-            class="rounded-lg px-4 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-color-default/40"
-            :class="
-              activeTab === tab.value
-                ? 'bg-dashboard-bg font-medium text-dashboard-heading shadow-sm'
-                : 'text-dashboard-text hover:text-dashboard-heading'
-            "
-            @click="selectTab(tab.value)"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
-        <AppPeriodSelector
-          v-model="activePeriod"
-          aria-label="Promoter reporting period"
-          :options="periodOptions"
-        />
-      </div>
-    </section>
-
-    <section
-      class="grid grid-cols-1 gap-3"
-      :class="
-        activeTab === 'transactions'
-          ? 'sm:grid-cols-2 xl:grid-cols-6'
-          : 'sm:grid-cols-2 xl:grid-cols-4'
-      "
-      aria-label="Promoter summary metrics"
+    <AppTab
+      v-model:active-tab="activeTab"
+      :tab-list="detailTabs"
+      :default-tab-id="activeTab"
+      :show-icon="false"
+      tab-btn-style="pill"
+      class="!max-w-full"
     >
-      <article
-        v-for="metric in activeMetrics"
-        :key="metric.label"
-        class="flex min-h-[124px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
-      >
-        <p class="text-xs text-dashboard-text">{{ metric.label }}</p>
-        <p
-          class="mt-2 text-2xl font-medium tracking-tight text-dashboard-heading"
+      <template #header-actions>
+        <AppDropdown
+          ref="periodDropdown"
+          position="right"
+          :width-is-finite="false"
         >
-          {{ metric.value }}
-        </p>
-        <p class="mt-auto pt-3 text-[0.6875rem] text-dashboard-text">
-          {{ metric.description }}
-        </p>
-      </article>
-    </section>
-
-    <TableComponent
-      :headings="tableHeadings"
-      :body="pagedAudience"
-      empty-heading="No referred audience found"
-      empty-subtitle="Try changing the search text or active filter."
-    >
-      <template #table-heading>
-        <TableComponentHeader
-          v-model:search="searchInput"
-          table-name="Referred Audience"
-          search-placeholder="Search..."
-        >
-          <template #filters>
-            <AppDropdown
-              ref="audienceDropdown"
-              position="right"
-              :width-is-finite="false"
+          <template #default>
+            <button
+              type="button"
+              class="inline-flex h-12 items-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 text-sm text-dashboard-heading transition hover:border-brand-color-default"
+              aria-label="Promoter reporting period"
             >
-              <template #default>
-                <button
-                  type="button"
-                  class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
-                >
-                  Filter by:
-                  {{
-                    audienceFilterOptions.find(
-                      (option) => option.value === audienceFilter,
-                    )?.label ?? "All"
-                  }}
-                  <Icon name="vent:arrow-down" size="0.9rem" />
-                </button>
-              </template>
-              <template #dropdown_body>
-                <div class="min-w-44 space-y-1">
-                  <button
-                    v-for="option in audienceFilterOptions"
-                    :key="option.value"
-                    type="button"
-                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                    :class="{
-                      'bg-dashboard-bg-dark': audienceFilter === option.value,
-                    }"
-                    @click="selectAudienceFilter(option.value)"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-              </template>
-            </AppDropdown>
+              <Icon name="vent:calendar" size="1rem" />
+              {{ activePeriodLabel }}
+              <Icon name="vent:arrow-down" size="0.9rem" />
+            </button>
           </template>
-        </TableComponentHeader>
+          <template #dropdown_body>
+            <div class="min-w-40 space-y-1">
+              <button
+                v-for="period in promoterPeriodOptions"
+                :key="period.value"
+                type="button"
+                class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                :class="{
+                  'bg-dashboard-bg-dark': activePeriod === period.value,
+                }"
+                @click="selectPeriod(period.value)"
+              >
+                {{ period.label }}
+              </button>
+            </div>
+          </template>
+        </AppDropdown>
       </template>
 
-      <template #col_transaction="{ rowData }">
-        <AppPills
-          :color="rowData.hasTransaction ? 'green' : 'red'"
-          class="text-xs"
+      <template #audiences>
+        <div
+          class="flex flex-col gap-6 border-t border-dashboard-card-border pt-5"
         >
-          {{ rowData.hasTransaction ? "Yes" : "No" }}
-        </AppPills>
+          <PromoterMetricRows :rows="promoterDetails.metricRows.audiences" />
+          <TableComponent
+            :headings="tableHeadings"
+            :body="pagedAudience"
+            empty-heading="No referred audience found"
+            empty-subtitle="Try changing the search text or active filter."
+          >
+            <template #table-heading>
+              <TableComponentHeader
+                v-model:search="searchInput"
+                table-name="Referred Audience"
+                search-placeholder="Search..."
+              >
+                <template #filters>
+                  <AppDropdown
+                    ref="audienceDropdown"
+                    position="right"
+                    :width-is-finite="false"
+                  >
+                    <template #default>
+                      <button
+                        type="button"
+                        class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
+                      >
+                        Filter by:
+                        {{
+                          audienceFilterOptions.find(
+                            (option) => option.value === audienceFilter,
+                          )?.label ?? "All"
+                        }}
+                        <Icon name="vent:arrow-down" size="0.9rem" />
+                      </button>
+                    </template>
+                    <template #dropdown_body>
+                      <div class="min-w-44 space-y-1">
+                        <button
+                          v-for="option in audienceFilterOptions"
+                          :key="option.value"
+                          type="button"
+                          class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                          :class="{
+                            'bg-dashboard-bg-dark':
+                              audienceFilter === option.value,
+                          }"
+                          @click="selectAudienceFilter(option.value)"
+                        >
+                          {{ option.label }}
+                        </button>
+                      </div>
+                    </template>
+                  </AppDropdown>
+                </template>
+              </TableComponentHeader>
+            </template>
+
+            <template #col_transaction="{ rowData }">
+              <AppPills
+                :color="rowData.hasTransaction ? 'green' : 'red'"
+                class="text-xs"
+              >
+                {{ rowData.hasTransaction ? "Yes" : "NO" }}
+              </AppPills>
+            </template>
+
+            <template #col_status="{ rowData }">
+              <AppPills
+                :color="rowData.isVerified ? 'green' : 'red'"
+                class="text-xs"
+              >
+                {{ rowData.isVerified ? "Verified" : "Not verified" }}
+              </AppPills>
+            </template>
+
+            <template #table-footer>
+              <TableComponentPagination
+                :page="audiencePage"
+                :per-page="tablePageSize"
+                :total-items="filteredAudience.length"
+                @change-page="audiencePage = $event"
+              />
+            </template>
+          </TableComponent>
+        </div>
       </template>
 
-      <template #col_status="{ rowData }">
-        <AppPills :color="rowData.isVerified ? 'green' : 'red'" class="text-xs">
-          {{ rowData.isVerified ? "Verified" : "Not verified" }}
-        </AppPills>
+      <template
+        v-for="tab in ['transactions', 'withdrawal', 'utility'] as const"
+        :key="tab"
+        #[tab]
+      >
+        <div class="border-t border-dashboard-card-border pt-5">
+          <PromoterMetricRows :rows="promoterDetails.metricRows[tab]" />
+        </div>
       </template>
-
-      <template #table-footer>
-        <TableComponentPagination
-          :page="audiencePage"
-          :per-page="tablePageSize"
-          :total-items="filteredAudience.length"
-          @change-page="audiencePage = $event"
-        />
-      </template>
-    </TableComponent>
+    </AppTab>
 
     <PromoterEditModal
       ref="editPromoterModal"

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { BreadcrumbData } from "~/utils/types/misc/BreadcrumbData";
+
+/** Route shell for a single promoter's profile and performance dashboard. */
 definePageMeta({
   pageTransition: { name: "page-zoom", mode: "out-in" },
   layout: "dashboard",
@@ -11,8 +14,22 @@ const promoterId = computed(() => {
   const value = route.params.id;
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 });
+
+const breadcrumb: BreadcrumbData[] = [
+  {
+    name: "Promoters",
+    route: "/promoters",
+  },
+  {
+    name: "Promoter Profile",
+    route: "",
+  },
+];
 </script>
 
 <template>
-  <PromoterDetail :promoter-id="promoterId" />
+  <div class="flex flex-col w-full gap-6">
+    <AppBreadcrumb :list="breadcrumb" />
+    <PromoterDetail :promoter-id="promoterId" />
+  </div>
 </template>
