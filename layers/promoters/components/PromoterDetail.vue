@@ -381,7 +381,10 @@ watch(
         <div
           class="flex flex-col gap-6 border-t border-dashboard-card-border pt-5"
         >
-          <PromoterMetricRows :rows="promoterDetails.metricRows.audiences" />
+          <AppMetricRows
+            :rows="promoterDetails.metricRows.audiences"
+            aria-label="Promoter summary metrics"
+          />
           <TableComponent
             :headings="tableHeadings"
             :body="pagedAudience"
@@ -472,7 +475,10 @@ watch(
         #[tab]
       >
         <div class="border-t border-dashboard-card-border pt-5">
-          <PromoterMetricRows :rows="promoterDetails.metricRows[tab]" />
+          <AppMetricRows
+            :rows="promoterDetails.metricRows[tab]"
+            aria-label="Promoter summary metrics"
+          />
         </div>
       </template>
     </AppTab>

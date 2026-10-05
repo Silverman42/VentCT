@@ -12,10 +12,6 @@ import {
 } from "../composables/useAudienceMockData";
 import { useAudienceStore } from "../composables/useAudienceStore";
 
-interface DetailModalController {
-  open: (data: IAudienceMember) => void;
-}
-
 interface NewModalController {
   open: () => Promise<void> | void;
 }
@@ -30,7 +26,6 @@ const route = useRoute();
 const router = useRouter();
 
 const filterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
-const audienceDetailModal = ref<DetailModalController | null>(null);
 const audienceNewModal = ref<NewModalController | null>(null);
 const isApplyingRoute = ref(false);
 
@@ -176,10 +171,10 @@ const selectFilter = (filter: AudienceVerificationFilter | "all"): void => {
   filterDropdown.value?.closeDropdown();
 };
 
-/** Opens the detail modal when an audience row is clicked. */
+/** Navigates to the single audience page when an audience row is clicked. */
 const openAudienceDetail = (row: ITableBodyData): void => {
   const member = row as IAudienceMember;
-  audienceDetailModal.value?.open(member);
+  void navigateTo(`/audiences/${member.id}`);
 };
 
 /** Opens the New Audience creation modal. */
@@ -355,7 +350,6 @@ onMounted(() => {
     </TableComponent>
 
     <!-- Modals -->
-    <AudienceDetailModal ref="audienceDetailModal" />
     <AudienceNewModal
       ref="audienceNewModal"
       :campaign-options="campaignOptions"

@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import type { PromoterMetric } from "../composables/usePromoterMockData";
+import type { IAppMetric } from "~/utils/types/misc/Metric";
 
-const props = defineProps<{
-  rows: PromoterMetric[][];
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** Metric cards; each inner array renders as one grid row. */
+    rows: IAppMetric[][];
+    ariaLabel?: string;
+  }>(),
+  {
+    ariaLabel: "Summary metrics",
+  },
+);
 
 /** Picks responsive grid columns so each row fills the width with its card count. */
 const getRowColumns = (cardCount: number): string => {
@@ -15,7 +22,7 @@ const getRowColumns = (cardCount: number): string => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4" aria-label="Promoter summary metrics">
+  <div class="flex flex-col gap-4" :aria-label="props.ariaLabel">
     <section
       v-for="(row, rowIndex) in props.rows"
       :key="rowIndex"

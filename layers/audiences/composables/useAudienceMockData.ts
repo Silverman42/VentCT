@@ -1,3 +1,4 @@
+import type { IAppMetric } from "~/utils/types/misc/Metric";
 import type { ITableBodyData } from "~/utils/types/misc/TableComponent";
 
 /** Supported verification status for an audience member. */
@@ -20,6 +21,34 @@ export interface IAudienceMember extends ITableBodyData {
   hasTransaction: boolean;
   isVerified: boolean;
   joinedDate: string;
+}
+
+/** Metric dashboard tabs available on the single audience page. */
+export type AudienceDetailTab = "transactions" | "withdrawal" | "utility";
+
+/** Reporting windows available on the single audience page. */
+export type AudiencePeriod = "today" | "7d" | "30d" | "90d";
+
+/** Lists the reporting windows offered by the audience period dropdown. */
+export const audiencePeriodOptions: Array<{
+  label: string;
+  value: AudiencePeriod;
+}> = [
+  { label: "Today", value: "today" },
+  { label: "Last 7 days", value: "7d" },
+  { label: "Last 30 days", value: "30d" },
+  { label: "Last 90 days", value: "90d" },
+];
+
+/** Full profile and metric dashboard for a single audience member. */
+export interface IAudienceDetails extends IAudienceMember {
+  fullName: string;
+  level: string;
+  country: string;
+  countryCode: string;
+  lastTransactionDate: string;
+  /** Metric cards per tab; each inner array renders as one grid row. */
+  metricRows: Record<AudienceDetailTab, IAppMetric[][]>;
 }
 
 /** Summary metric structure rendered in top statistics cards. */
@@ -242,6 +271,54 @@ const promoterOptions = [
   "Bolex",
 ];
 
+/** Detail fixture metrics mirroring the View Audience designs. */
+const audienceDetailMetricRows: Record<AudienceDetailTab, IAppMetric[][]> = {
+  transactions: [
+    [
+      { label: "Total Volume", value: "$10,792", description: "EasyPay and SafeWallet volume" },
+      { label: "Transaction counts", value: "220", description: "Total counts for all transactions" },
+    ],
+    [
+      { label: "EasyPay Volume", value: "$5,792", description: "100 transactions completed" },
+      { label: "SafeWallet Volume", value: "$5,000", description: "120 transactions completed" },
+      { label: "SafeWallet Cash Volume", value: "$2,000", description: "60 transactions completed" },
+      { label: "SafeWallet Crypto Volume", value: "$3,000", description: "60 transactions completed" },
+    ],
+  ],
+  withdrawal: [
+    [
+      { label: "Total Withdrawal", value: "$23,000", description: "100 transactions completed" },
+      { label: "Cash Withdrawal", value: "$13,000", description: "62 transactions completed" },
+      { label: "Crypto Withdrawal", value: "$10,000", description: "38 transactions completed" },
+    ],
+  ],
+  utility: [
+    [
+      { label: "Total Utility Volume", value: "$1,000", description: "261 transactions completed" },
+      { label: "Airtime", value: "$600", description: "150 transactions completed" },
+      { label: "Data", value: "$400", description: "111 transactions completed" },
+    ],
+  ],
+};
+
+/** Extra profile fields keyed by audience ID; unlisted members use defaults. */
+const audienceProfileOverrides: Record<string, { fullName: string }> = {
+  "aud-1": { fullName: "Ibrahim Musa" },
+};
+
+/** Expands a list audience member into the detail fixture shown on its page. */
+const buildAudienceDetails = (member: IAudienceMember): IAudienceDetails => {
+  return {
+    ...member,
+    fullName: audienceProfileOverrides[member.id]?.fullName ?? member.name,
+    level: member.isVerified ? "Level 2" : "Level 1",
+    country: "Nigeria",
+    countryCode: "NG",
+    lastTransactionDate: member.hasTransaction ? member.joinedDate : "",
+    metricRows: audienceDetailMetricRows,
+  };
+};
+
 /** Composable providing typed audience mock datasets and options. */
 export const useAudienceMockData = () => {
   return {
@@ -249,5 +326,6 @@ export const useAudienceMockData = () => {
     audienceList,
     campaignOptions,
     promoterOptions,
+    buildAudienceDetails,
   };
 };

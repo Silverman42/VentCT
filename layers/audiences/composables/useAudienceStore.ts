@@ -1,4 +1,6 @@
+import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
 import {
+  type IAudienceDetails,
   type IAudienceMember,
   type IAudienceMetric,
   useAudienceMockData,
@@ -15,7 +17,8 @@ export interface ICreateAudiencePayload {
 
 /** Provides feature state and mock data actions for audiences. */
 export const useAudienceStore = () => {
-  const { audienceList, audienceMetrics } = useAudienceMockData();
+  const { audienceList, audienceMetrics, buildAudienceDetails } =
+    useAudienceMockData();
 
   const state = {
     fetchingAudiences: useState<boolean>(
@@ -29,6 +32,14 @@ export const useAudienceStore = () => {
     audiences: useState<IAudienceMember[]>(
       "useAudienceStore.audiences",
       () => audienceList,
+    ),
+    fetchingAudienceDetails: useState<boolean>(
+      "useAudienceStore.fetchingAudienceDetails",
+      () => false,
+    ),
+    selectedAudience: useState<IAudienceDetails | null>(
+      "useAudienceStore.selectedAudience",
+      () => null,
     ),
     metrics: useState<IAudienceMetric[]>(
       "useAudienceStore.metrics",
@@ -44,6 +55,24 @@ export const useAudienceStore = () => {
         return state.audiences.value;
       } finally {
         state.fetchingAudiences.value = false;
+      }
+    },
+
+    /** Loads one audience member's profile and metrics into `selectedAudience`. */
+    async fetchAudienceDetails(audienceId: string) {
+      state.fetchingAudienceDetails.value = true;
+      try {
+        const member = state.audiences.value.find(
+          (item) => item.id === audienceId,
+        );
+        const details = member ? buildAudienceDetails(member) : null;
+        state.selectedAudience.value = details;
+        return details;
+      } catch (error) {
+        ApiErrorHandler(error, true, false, "Audience detail fetch failed");
+        throw error;
+      } finally {
+        state.fetchingAudienceDetails.value = false;
       }
     },
 

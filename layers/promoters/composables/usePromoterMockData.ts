@@ -1,3 +1,4 @@
+import type { IAppMetric } from "~/utils/types/misc/Metric";
 import type { ITableBodyData } from "~/utils/types/misc/TableComponent";
 
 /** Controls the detail dashboard content visible for a promoter. */
@@ -44,11 +45,7 @@ export interface Promoter extends ITableBodyData {
 }
 
 /** Defines a summary card displayed in the promoter list or detail view. */
-export interface PromoterMetric {
-  label: string;
-  value: string;
-  description: string;
-}
+export type PromoterMetric = IAppMetric;
 
 /** Defines an audience member attributed to a promoter referral link. */
 export interface PromoterAudienceMember extends ITableBodyData {
