@@ -9,7 +9,7 @@ const props = withDefaults(
     showCount?: boolean;
     hasSidebar?: boolean;
     headerIsSticky?: boolean;
-    tabBtnStyle?: "full-border" | "bottom-border" | "pill";
+    tabBtnStyle?: "full-border" | "bottom-border" | "pill" | "outlined";
   }>(),
   {
     tabList: () => [],
@@ -50,6 +50,7 @@ watch(activeTabIndex, (newValue, prevValue) => {
           props.tabBtnStyle === 'full-border',
         'w-fit rounded-xl bg-dashboard-bg-dark p-1 gap-1':
           props.tabBtnStyle === 'pill',
+        'w-fit flex-wrap gap-3': props.tabBtnStyle === 'outlined',
       }"
       role="tablist"
     >
@@ -65,6 +66,7 @@ watch(activeTabIndex, (newValue, prevValue) => {
               'tab-btn-border': props.tabBtnStyle === 'full-border',
               'tab-btn-bottom': props.tabBtnStyle === 'bottom-border',
               'tab-btn-pill': props.tabBtnStyle === 'pill',
+              'tab-btn-outlined': props.tabBtnStyle === 'outlined',
             }"
             @click="selectTab(tab.id, index)"
           >
@@ -153,6 +155,23 @@ watch(activeTabIndex, (newValue, prevValue) => {
 
 .tab-btn-pill.active {
   @apply bg-dashboard-bg text-dashboard-heading font-medium shadow-xs;
+}
+
+.tab-btn-outlined {
+  @apply flex items-center justify-center gap-2 min-w-36 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-4 py-2.5 text-sm text-dashboard-heading cursor-pointer transition-colors duration-200;
+}
+
+.tab-btn-outlined .text {
+  @apply inline-block whitespace-nowrap;
+}
+
+.tab-btn-outlined:hover,
+.tab-btn-outlined.active {
+  @apply border-brand-color-default text-brand-color-default;
+}
+
+.tab-btn-outlined.active {
+  @apply bg-brand-color-default/10;
 }
 
 .tab-btn-bottom .text {
