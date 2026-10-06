@@ -243,12 +243,12 @@ defineExpose({ open, close });
             for="create-attendance-date"
             :error="v$.date.$error ? String(v$.date.$errors[0]?.$message ?? '') : ''"
           >
-            <input
+            <AppDatePicker
               id="create-attendance-date"
               v-model="form.date"
-              type="date"
-              :aria-invalid="v$.date.$error"
-              @blur="v$.date.$touch()"
+              placeholder="Select date"
+              :invalid="v$.date.$error"
+              @closed="v$.date.$touch()"
             />
           </AppInputContainer>
 

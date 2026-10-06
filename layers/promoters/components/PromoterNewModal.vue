@@ -175,12 +175,12 @@ defineExpose({ open, close });
             for="new-promoter-date"
             :error="v$.joinedDate.$error ? String(v$.joinedDate.$errors[0]?.$message ?? '') : ''"
           >
-            <input
+            <AppDatePicker
               id="new-promoter-date"
               v-model="form.joinedDate"
-              type="date"
-              :aria-invalid="v$.joinedDate.$error"
-              @blur="v$.joinedDate.$touch()"
+              placeholder="Select date"
+              :invalid="v$.joinedDate.$error"
+              @closed="v$.joinedDate.$touch()"
             />
           </PromoterFormField>
 

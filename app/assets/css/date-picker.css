@@ -1,0 +1,102 @@
+@import '@vuepic/vue-datepicker/dist/main.css';
+
+:root {
+    /*General*/
+    --dp-font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    --dp-border-radius: 8px; /*Configurable border-radius*/
+    --dp-cell-border-radius: 8px; /*Specific border radius for the calendar cell*/
+    --dp-common-transition: all 0.1s ease-in; /*Generic transition applied on buttons and calendar cells*/
+
+    /*Sizing*/
+    --dp-button-height: 35px; /*Size for buttons in overlays*/
+    --dp-month-year-row-height: 35px; /*Height of the month-year select row*/
+    --dp-month-year-row-button-size: 35px; /*Specific height for the next/previous buttons*/
+    --dp-button-icon-height: 20px; /*Icon sizing in buttons*/
+    --dp-cell-size: 35px; /*Width and height of calendar cell*/
+    --dp-cell-padding: 5px; /*Padding in the cell*/
+    --dp-common-padding: 10px; /*Common padding used*/
+    --dp-input-icon-padding: 35px; /*Padding on the left side of the input if icon is present*/
+    --dp-input-padding: 6px 30px 6px 12px; /*Padding in the input*/
+    --dp-menu-min-width: 260px; /*Adjust the min width of the menu*/
+    --dp-action-buttons-padding: 2px 5px; /*Adjust padding for the action buttons in action row*/
+    --dp-row-margin:  5px 0; /*Adjust the spacing between rows in the calendar*/
+    --dp-calendar-header-cell-padding:  0.5rem; /*Adjust padding in calendar header cells*/
+    --dp-two-calendars-spacing:  10px; /*Space between multiple calendars*/
+    --dp-overlay-col-padding:  3px; /*Padding in the overlay column*/
+    --dp-time-inc-dec-button-size:  32px; /*Sizing for arrow buttons in the time picker*/
+    --dp-menu-padding: 6px 8px; /*Menu padding*/
+
+    /*Font sizes*/
+    --dp-font-size: 1rem; /*Default font-size*/
+    --dp-preview-font-size: 0.8rem; /*Font size of the date preview in the action row*/
+    --dp-time-font-size: 0.8rem; /*Font size in the time picker*/
+
+    /*Transitions*/
+    --dp-animation-duration: 0.1s; /*Transition duration*/
+    --dp-menu-appear-transition-timing: cubic-bezier(.4, 0, 1, 1); /*Timing on menu appear animation*/
+    --dp-transition-timing: ease-out; /*Timing on slide animations*/
+}
+
+.dp__theme_light {
+    --dp-background-color: #FFFFFF;
+    --dp-text-color: #242933;
+    --dp-hover-color: #F2F4F7;
+    --dp-hover-text-color: #242933;
+    --dp-hover-icon-color: #6A6E76;
+    --dp-primary-color: #00AAFE;
+    --dp-primary-disabled-color: #66CCFE;
+    --dp-primary-text-color: #FFFFFF;
+    --dp-secondary-color: #9A9DA3;
+    --dp-border-color: #E6E9EF;
+    --dp-menu-border-color: #E6E9EF;
+    --dp-border-color-hover: #00AAFE;
+    --dp-border-color-focus: #00AAFE;
+    --dp-disabled-color: #F8F9FC;
+    --dp-scroll-bar-background: #F2F4F7;
+    --dp-scroll-bar-color: #00AAFE;
+    --dp-success-color: #009923;
+    --dp-success-color-disabled: #B2FFC4;
+    --dp-icon-color: #6A6E76;
+    --dp-danger-color: #FF5E00;
+    --dp-marker-color: #FF5E00;
+    --dp-tooltip-color: #F8F9FC;
+    --dp-disabled-color-text: #9A9DA3;
+    --dp-highlight-color: rgba(0, 170, 254, 0.1);
+    --dp-range-between-dates-background-color: var(--dp-hover-color, #F2F4F7);
+    --dp-range-between-dates-text-color: var(--dp-hover-text-color, #242933);
+    --dp-range-between-border-color: var(--dp-hover-color, #F2F4F7);
+}
+
+.dp__theme_dark {
+    --dp-background-color: #002233;
+    --dp-text-color: #FFFFFF;
+    --dp-hover-color: #003752;
+    --dp-hover-text-color: #FFFFFF;
+    --dp-hover-icon-color: #9A9DA3;
+    --dp-primary-color: #00AAFE;
+    --dp-primary-disabled-color: #006698;
+    --dp-primary-text-color: #FFFFFF;
+    --dp-secondary-color: #9A9DA3;
+    --dp-border-color: #003752;
+    --dp-menu-border-color: #003752;
+    --dp-border-color-hover: #00AAFE;
+    --dp-border-color-focus: #00AAFE;
+    --dp-disabled-color: #002B40;
+    --dp-disabled-color-text: #6A6E76;
+    --dp-scroll-bar-background: #002B40;
+    --dp-scroll-bar-color: #00AAFE;
+    --dp-success-color: #009923;
+    --dp-success-color-disabled: #006617;
+    --dp-icon-color: #9A9DA3;
+    --dp-danger-color: #FF5E00;
+    --dp-marker-color: #FF5E00;
+    --dp-tooltip-color: #002B40;
+    --dp-highlight-color: rgba(0, 170, 254, 0.2);
+    --dp-range-between-dates-background-color: var(--dp-hover-color, #003752);
+    --dp-range-between-dates-text-color: var(--dp-hover-text-color, #FFFFFF);
+    --dp-range-between-border-color: var(--dp-hover-color, #003752);
+}
+/* Keep the teleported calendar above AppDropdown (100000) and AppModal (~10000) layers. */
+.dp--menu-wrapper {
+    z-index: 200000;
+}

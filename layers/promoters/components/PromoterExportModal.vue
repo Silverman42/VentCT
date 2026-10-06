@@ -348,10 +348,23 @@ defineExpose({ open, close });
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <AppInputContainer label="Start date" for="promoter-export-start-date" :error="v$.startDate.$error ? String(v$.startDate.$errors[0]?.$message ?? '') : ''">
-            <input id="promoter-export-start-date" v-model="form.startDate" type="date" :aria-invalid="v$.startDate.$error" @blur="v$.startDate.$touch()" />
+            <AppDatePicker
+              id="promoter-export-start-date"
+              v-model="form.startDate"
+              placeholder="Select start date"
+              :invalid="v$.startDate.$error"
+              @closed="v$.startDate.$touch()"
+            />
           </AppInputContainer>
           <AppInputContainer label="End date" for="promoter-export-end-date" :error="v$.endDate.$error ? String(v$.endDate.$errors[0]?.$message ?? '') : ''">
-            <input id="promoter-export-end-date" v-model="form.endDate" type="date" :min="form.startDate || undefined" :aria-invalid="v$.endDate.$error" @blur="v$.endDate.$touch()" />
+            <AppDatePicker
+              id="promoter-export-end-date"
+              v-model="form.endDate"
+              placeholder="Select end date"
+              :min-date="form.startDate || undefined"
+              :invalid="v$.endDate.$error"
+              @closed="v$.endDate.$touch()"
+            />
           </AppInputContainer>
         </div>
 

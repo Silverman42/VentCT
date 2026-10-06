@@ -5,7 +5,11 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   ssr: true,
   modules: ["@nuxt/icon"],
-  css: ["~/assets/css/main.css", "~/assets/css/transitions.css"],
+  css: [
+    "~/assets/css/main.css",
+    "~/assets/css/transitions.css",
+    "~/assets/css/date-picker.css",
+  ],
   icon: {
     customCollections: [
       {

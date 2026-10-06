@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { useVuelidate } from "@vuelidate/core";
-import {
-  helpers,
-  integer,
-  minValue,
-  required,
-} from "@vuelidate/validators";
+import { helpers, integer, minValue, required } from "@vuelidate/validators";
 import type { AppDropdown } from "#components";
 import {
   EVENT_STATUS_LABELS,
@@ -60,7 +55,9 @@ const v$ = useVuelidate(validations, form);
 
 /** Returns the first validation message for a field, or an empty string. */
 const fieldError = (field: keyof EventForm): string =>
-  v$.value[field].$error ? String(v$.value[field].$errors[0]?.$message ?? "") : "";
+  v$.value[field].$error
+    ? String(v$.value[field].$errors[0]?.$message ?? "")
+    : "";
 
 /** Restores empty form values and clears validation state. */
 const resetForm = (): void => {
@@ -117,13 +114,13 @@ defineExpose({ open, close });
 <template>
   <AppModal ref="modal" desktop-width="600px">
     <form class="pb-1" novalidate @submit.prevent="submit">
-      <h2 class="pb-5 text-xl font-medium tracking-tight text-dashboard-heading">
+      <h2
+        class="pb-5 text-xl font-medium tracking-tight text-dashboard-heading"
+      >
         New Event
       </h2>
 
-      <div
-        class="space-y-4 rounded-2xl border border-dashboard-card-border p-4 sm:p-6"
-      >
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <AppInputContainer
           label="Name"
           for="new-event-name"
@@ -158,32 +155,34 @@ defineExpose({ open, close });
           />
         </AppInputContainer>
 
-        <AppInputContainer
-          label="Location"
-          for="new-event-location"
-          :error="fieldError('location')"
-        >
-          <input
-            id="new-event-location"
-            v-model.trim="form.location"
-            type="text"
-            placeholder="e.g University of benin, benin city"
-            :aria-invalid="v$.location.$error"
-            @blur="v$.location.$touch()"
-          />
-        </AppInputContainer>
+        <div class="md:col-span-2">
+          <AppInputContainer
+            label="Location"
+            for="new-event-location"
+            :error="fieldError('location')"
+          >
+            <input
+              id="new-event-location"
+              v-model.trim="form.location"
+              type="text"
+              placeholder="e.g University of benin, benin city"
+              :aria-invalid="v$.location.$error"
+              @blur="v$.location.$touch()"
+            />
+          </AppInputContainer>
+        </div>
 
         <AppInputContainer
           label="Date"
           for="new-event-date"
           :error="fieldError('date')"
         >
-          <input
+          <AppDatePicker
             id="new-event-date"
             v-model="form.date"
-            type="date"
-            :aria-invalid="v$.date.$error"
-            @blur="v$.date.$touch()"
+            placeholder="Select event date"
+            :invalid="v$.date.$error"
+            @closed="v$.date.$touch()"
           />
         </AppInputContainer>
 
@@ -213,7 +212,11 @@ defineExpose({ open, close });
               />
             </button>
             <template #dropdown_body>
-              <div role="listbox" aria-label="Status" class="min-w-56 space-y-1">
+              <div
+                role="listbox"
+                aria-label="Status"
+                class="min-w-56 space-y-1"
+              >
                 <button
                   v-for="option in statusOptions"
                   :key="option"
@@ -232,7 +235,7 @@ defineExpose({ open, close });
         </AppInputContainer>
       </div>
 
-      <div class="mt-6 flex gap-3">
+      <div class="mt-6 flex justify-end gap-3">
         <AppButton
           size="md"
           type="submit"

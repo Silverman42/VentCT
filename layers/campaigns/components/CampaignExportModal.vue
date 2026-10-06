@@ -423,12 +423,12 @@ defineExpose({ open, close });
                 : ''
             "
           >
-            <input
+            <AppDatePicker
               id="campaign-export-start-date"
               v-model="form.startDate"
-              type="date"
-              :aria-invalid="v$.startDate.$error"
-              @blur="v$.startDate.$touch()"
+              placeholder="Select start date"
+              :invalid="v$.startDate.$error"
+              @closed="v$.startDate.$touch()"
             />
           </AppInputContainer>
           <AppInputContainer
@@ -440,13 +440,13 @@ defineExpose({ open, close });
                 : ''
             "
           >
-            <input
+            <AppDatePicker
               id="campaign-export-end-date"
               v-model="form.endDate"
-              type="date"
-              :min="form.startDate || undefined"
-              :aria-invalid="v$.endDate.$error"
-              @blur="v$.endDate.$touch()"
+              placeholder="Select end date"
+              :min-date="form.startDate || undefined"
+              :invalid="v$.endDate.$error"
+              @closed="v$.endDate.$touch()"
             />
           </AppInputContainer>
         </div>

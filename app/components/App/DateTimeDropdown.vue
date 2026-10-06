@@ -403,21 +403,30 @@ const applyCustomRange = () => {
               class="flex flex-col gap-1 text-xs uppercase tracking-wide text-dashboard-text/70"
             >
               From
-              <input
-                v-model="customStart"
-                type="datetime-local"
-                class="rounded-md border border-dashboard-card-border bg-dashboard-bg px-3 py-2 text-sm text-dashboard-heading focus:border-brand-color-default focus:outline-none"
-               autocomplete="new-password-no-autofill" />
+              <div
+                class="rounded-md border border-dashboard-card-border bg-dashboard-bg px-3 py-2 text-sm normal-case tracking-normal focus-within:border-brand-color-default"
+              >
+                <AppDatePicker
+                  v-model="customStart"
+                  enable-time
+                  placeholder="Select date and time"
+                />
+              </div>
             </label>
             <label
               class="flex flex-col gap-1 text-xs uppercase tracking-wide text-dashboard-text/70"
             >
               To
-              <input
-                v-model="customEnd"
-                type="datetime-local"
-                class="rounded-md border border-dashboard-card-border bg-dashboard-bg px-3 py-2 text-sm text-dashboard-heading focus:border-brand-color-default focus:outline-none"
-               autocomplete="new-password-no-autofill" />
+              <div
+                class="rounded-md border border-dashboard-card-border bg-dashboard-bg px-3 py-2 text-sm normal-case tracking-normal focus-within:border-brand-color-default"
+              >
+                <AppDatePicker
+                  v-model="customEnd"
+                  enable-time
+                  placeholder="Select date and time"
+                  :min-date="customStart || undefined"
+                />
+              </div>
             </label>
           </div>
           <p v-if="isCustomInvalid" class="text-xs text-red-500">

@@ -46,12 +46,6 @@ export const sidebarLinks: SidebarLink[][] = [
     },
     {
       type: "link",
-      name: "Attendances",
-      icon: "vent:folder-two",
-      route: "/attendances",
-    },
-    {
-      type: "link",
       name: "Audiences",
       icon: "vent:people",
       route: "/audiences",
