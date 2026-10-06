@@ -1,11 +1,27 @@
-<template>
-  <AppAuthLayout>
-    <div
-      class="max-w-125 p-5 md:p-10 border border-dashboard-card-border rounded-4xl"
-    >
-      ggdh
-    </div>
+<script setup lang="ts">
+import { PassResetSteps } from "../composables/usePasswordResetStore";
 
-    <div></div>
+definePageMeta({
+  pageTransition: { name: "page-zoom", mode: "out-in" },
+});
+
+const { resetStep, resetActions } = usePasswordResetStore();
+
+const redirectToLogin = () => navigateTo("/");
+
+onUnmounted(() => {
+  resetActions();
+});
+</script>
+<template>
+  <AppAuthLayout @cancel="redirectToLogin" :containerMaxWidth="550">
+    <PasswordResetRequest v-if="resetStep === PassResetSteps.REQUEST" />
+    <PasswordResetCodeVerify
+      v-if="resetStep === PassResetSteps.CODE_VERIFICATION"
+    />
+    <PasswordResetChange
+      v-if="resetStep === PassResetSteps.CHANGE_PASSWORD"
+    ></PasswordResetChange>
+    <PasswordResetSuccess v-if="resetStep === PassResetSteps.SUCCESS" />
   </AppAuthLayout>
 </template>

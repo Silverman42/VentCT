@@ -56,9 +56,7 @@ const handleSubmit = async (): Promise<void> => {
           label="Email"
           for="login-email"
           :error="
-            v$.email.$error
-              ? String(v$.email.$errors[0]?.$message ?? '')
-              : ''
+            v$.email.$error ? String(v$.email.$errors[0]?.$message ?? '') : ''
           "
         >
           <input
@@ -96,7 +94,7 @@ const handleSubmit = async (): Promise<void> => {
             </template>
           </AppInputContainer>
           <nuxt-link
-            to="/"
+            to="/password-reset"
             class="text-brand-color-007 inline-block w-full text-right mt-2 hover:text-brand-color-006 text-xs"
             >Forgot Password ?</nuxt-link
           >
