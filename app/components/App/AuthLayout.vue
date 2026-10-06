@@ -20,11 +20,11 @@ const cancel = () => {
 <template>
   <div class="bg-dashboard-bg font-body">
     <div
-      class="max-w-[1475px] mx-auto w-full flex flex-col justify-between items-center min-h-screen p-6 py-10 font-body"
+      class="max-w-[1475px] mx-auto w-full flex flex-col justify-between items-center gap-5 min-h-screen p-6 py-10 font-body"
     >
       <!-- header -->
       <aside class="flex justify-between items-center w-full">
-        <img src="/img/logo.svg" class="w-13" alt="vent-logo" />
+        <img src="/img/logo.svg" class="w-11" alt="vent-logo" />
 
         <button
           @click="cancel"

@@ -10,8 +10,14 @@ const payload = reactive({
   confirm_password: "",
 });
 
+/** Passes when the value contains at least one digit. */
 const requiredNumber = helpers.regex(/\d/);
-const requiredUpperLowerCase = helpers.regex(/[a-zA-Z]/);
+/** Passes when the value contains at least one uppercase letter. */
+const requiredUppercase = helpers.regex(/[A-Z]/);
+/** Passes when the value contains at least one lowercase letter. */
+const requiredLowercase = helpers.regex(/[a-z]/);
+/** Passes when the value contains at least one non-alphanumeric, non-space character. */
+const requiredSpecialChar = helpers.regex(/[^A-Za-z0-9\s]/);
 
 const validations = computed(() => {
   return {
@@ -25,9 +31,17 @@ const validations = computed(() => {
         "Password must contain at least one number",
         requiredNumber,
       ),
-      hasLetter: helpers.withMessage(
-        "Password must contain at least one letter",
-        requiredUpperLowerCase,
+      hasUppercase: helpers.withMessage(
+        "Password must contain at least one uppercase letter",
+        requiredUppercase,
+      ),
+      hasLowercase: helpers.withMessage(
+        "Password must contain at least one lowercase letter",
+        requiredLowercase,
+      ),
+      hasSpecialChar: helpers.withMessage(
+        "Password must contain at least one special character",
+        requiredSpecialChar,
       ),
     },
     confirm_password: {
@@ -41,13 +55,18 @@ const validations = computed(() => {
 
 const v$ = useVuelidate(validations, payload);
 
+/** Per-rule pass flags that drive the password requirement tiles. */
 const passwordIsValid = computed(() => ({
   minLength:
     !v$.value.password.minLength.$invalid && payload.password.length > 0,
   hasNumber:
     !v$.value.password.hasNumber.$invalid && payload.password.length > 0,
-  hasLetter:
-    !v$.value.password.hasLetter.$invalid && payload.password.length > 0,
+  hasUpperLower:
+    !v$.value.password.hasUppercase.$invalid &&
+    !v$.value.password.hasLowercase.$invalid &&
+    payload.password.length > 0,
+  hasSpecialChar:
+    !v$.value.password.hasSpecialChar.$invalid && payload.password.length > 0,
 }));
 
 const updatePassword = () => {
@@ -87,7 +106,7 @@ const updatePassword = () => {
           >
             Password must have :
           </h3>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div
               class="flex flex-col items-center gap-0.5 p-2 rounded-xl"
               :class="{
@@ -132,23 +151,44 @@ const updatePassword = () => {
               class="flex flex-col items-center gap-0.5 p-2 rounded-xl"
               :class="{
                 'border border-dashboard-card-border':
-                  !passwordIsValid.hasLetter,
+                  !passwordIsValid.hasUpperLower,
                 'border border-brand-color-007 ring-4 ring-brand-color-010/30':
-                  passwordIsValid.hasLetter,
+                  passwordIsValid.hasUpperLower,
               }"
             >
               <p
                 class="text-2xl font-black"
                 :class="{
-                  'text-dashboard-heading': !passwordIsValid.hasLetter,
-                  'text-brand-color-007': passwordIsValid.hasLetter,
+                  'text-dashboard-heading': !passwordIsValid.hasUpperLower,
+                  'text-brand-color-007': passwordIsValid.hasUpperLower,
                 }"
               >
                 Aa
               </p>
               <p class="text-[10px] text-dashboard-text">
-                Upper and Lower case
+                <span class="md:hidden">Upper and Lower case</span>
+                <span class="hidden md:inline">Up. and Low. case</span>
               </p>
+            </div>
+            <div
+              class="flex flex-col items-center gap-0.5 p-2 rounded-xl"
+              :class="{
+                'border border-dashboard-card-border':
+                  !passwordIsValid.hasSpecialChar,
+                'border border-brand-color-007 ring-4 ring-brand-color-010/30':
+                  passwordIsValid.hasSpecialChar,
+              }"
+            >
+              <p
+                class="text-2xl font-black"
+                :class="{
+                  'text-dashboard-heading': !passwordIsValid.hasSpecialChar,
+                  'text-brand-color-007': passwordIsValid.hasSpecialChar,
+                }"
+              >
+                #!
+              </p>
+              <p class="text-[10px] text-dashboard-text">Special Character</p>
             </div>
           </div>
         </div>
