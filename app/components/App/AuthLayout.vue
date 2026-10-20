@@ -6,12 +6,16 @@ const emit = defineEmits(["cancel"]);
 const props = withDefaults(
   defineProps<{
     containerMaxWidth?: number;
+    /** Render the slot directly, without the centered card wrapper. */
+    bare?: boolean;
   }>(),
   {
     containerMaxWidth: 500,
+    bare: false,
   },
 );
 
+/** Emits `cancel` when the close button is pressed. */
 const cancel = () => {
   emit("cancel");
 };
@@ -36,7 +40,9 @@ const cancel = () => {
       <!-- header end-->
 
       <!-- body -->
+      <slot v-if="props.bare"></slot>
       <section
+        v-else
         class="inline-block w-full h-auto bg-dashboard-bg-dark border border-dashboard-card-border backdrop-blur-md rounded-4xl p-2 relative z-4"
         :style="{
           maxWidth: props.containerMaxWidth + 'px',

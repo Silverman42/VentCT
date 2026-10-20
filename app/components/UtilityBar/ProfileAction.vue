@@ -1,9 +1,11 @@
 <script setup lang="ts">
-const { profile, isLoggingOut, logout } = useUtilityBarMockData();
+const { profile, isAuthenticated, loggingOut: isLoggingOut, logout } =
+  useAuthStore();
 </script>
 
 <template>
-  <AppDropdown :width-is-finite="false" position="right">
+  <UtilityBarProfileActionShimmer v-if="!isAuthenticated" />
+  <AppDropdown v-else :width-is-finite="false" position="right">
     <ul
       class="inline-flex h-12 w-auto items-center gap-0.5 rounded-full border border-dashboard-card-border p-1 shadow-lg shadow-transparent transition-all duration-300 ease-in-out hover:border-brand-color-default hover:shadow-brand-color-009/50"
     >

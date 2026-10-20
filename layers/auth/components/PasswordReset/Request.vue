@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { email, helpers, required } from "@vuelidate/validators";
-import { PassResetSteps } from "../../composables/usePasswordResetStore";
 import useVuelidate from "@vuelidate/core";
 
-const { setEmail, changeStep } = usePasswordResetStore();
+const { requestResetCode, requestingCode } = usePasswordResetStore();
 
 const payload = reactive({
   email: "",
@@ -20,11 +19,11 @@ const validation = computed(() => {
 
 const v$ = useVuelidate(validation, payload);
 
-const submitForm = () => {
+/** Validates the email and requests a reset code; the store advances the step on success. */
+const submitForm = async () => {
   v$.value?.$touch();
   if (v$.value.$invalid) return;
-  setEmail(payload.email);
-  changeStep(PassResetSteps.CODE_VERIFICATION);
+  await requestResetCode(payload.email).catch(() => {});
 };
 </script>
 <template>
@@ -50,13 +49,14 @@ const submitForm = () => {
           <input
             type="email"
             placeholder="Enter your email address"
-            v-model="payload.email"
+            v-model.trim="payload.email"
+            @blur="v$.email.$touch()"
           />
         </AppInputContainer>
       </div>
 
       <div class="w-full pt-5">
-        <AppButton block size="md" color="primary">
+        <AppButton block size="md" color="primary" :loading="requestingCode">
           Send Verification Code</AppButton
         >
       </div>

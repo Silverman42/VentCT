@@ -3,6 +3,7 @@ import { PassResetSteps } from "../composables/usePasswordResetStore";
 
 definePageMeta({
   pageTransition: { name: "page-zoom", mode: "out-in" },
+  middleware: ["guest"],
 });
 
 const { resetStep, resetActions } = usePasswordResetStore();

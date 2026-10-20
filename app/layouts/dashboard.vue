@@ -1,7 +1,22 @@
+<script setup lang="ts">
+const { fetchAuthUser } = useAuthStore();
+
+/** Loads the signed-in user for the dashboard and sends unauthenticated visitors to the login page. */
+const authenticate = async () => {
+  try {
+    await fetchAuthUser();
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode === 401) {
+      await navigateTo("/");
+    }
+  }
+};
+
+onMounted(authenticate);
+</script>
+
 <template>
   <div>
-    <AppToast />
-
     <div class="flex w-full font-body">
       <Sidebar />
 

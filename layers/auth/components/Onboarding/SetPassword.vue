@@ -2,7 +2,15 @@
 import { helpers, required, minLength } from "@vuelidate/validators";
 import { useVuelidate } from "@vuelidate/core";
 
+const props = defineProps<{
+  /** Invitation token from the onboarding link. */
+  token: string;
+}>();
+
+const { completeInvitation, acceptingInvitation } = useOnboardingStore();
+
 const payload = reactive({
+  name: "",
   password: "",
   confirm_password: "",
 });
@@ -18,6 +26,9 @@ const requiredSpecialChar = helpers.regex(/[^A-Za-z0-9\s]/);
 
 const validations = computed(() => {
   return {
+    name: {
+      required: helpers.withMessage("Full name is required", required),
+    },
     password: {
       required: helpers.withMessage("Password is required", required),
       minLength: helpers.withMessage(
@@ -41,6 +52,13 @@ const validations = computed(() => {
         requiredSpecialChar,
       ),
     },
+    confirm_password: {
+      required: helpers.withMessage("Please confirm your password", required),
+      isSamePassword: helpers.withMessage(
+        "The confirmed password is not the same as the new password.",
+        () => payload.confirm_password === payload.password,
+      ),
+    },
   };
 });
 
@@ -59,9 +77,25 @@ const passwordIsValid = computed(() => ({
   hasSpecialChar:
     !v$.value.password.hasSpecialChar.$invalid && payload.password.length > 0,
 }));
+
+/** First validation message for a field once it has been touched. */
+const fieldError = (field: "name" | "password" | "confirm_password") =>
+  v$.value[field].$error ? String(v$.value[field].$errors[0]?.$message ?? "") : "";
+
+/** Validates the form and activates the invited account. */
+const activateAccount = async () => {
+  v$.value.$touch();
+  if (v$.value.$invalid) return;
+
+  await completeInvitation(props.token, {
+    name: payload.name,
+    password: payload.password,
+    password_confirmation: payload.confirm_password,
+  }).catch(() => {});
+};
 </script>
 <template>
-  <AppAuthLayout :containerMaxWidth="550">
+  <AppAuthLayout :containerMaxWidth="550" @cancel="navigateTo('/')">
     <div class="flex flex-col items-center gap-0.5 pb-5">
       <h1
         class="text-3xl font-medium text-dashboard-heading-blue tracking-tighter text-center"
@@ -73,14 +107,39 @@ const passwordIsValid = computed(() => ({
       </p>
     </div>
 
-    <div class="grid grid-cols-1 gap-7">
+    <form
+      class="grid grid-cols-1 gap-7"
+      novalidate
+      @submit.prevent="activateAccount"
+    >
+      <AppInputContainer
+        label="Full Name"
+        for="onboarding-name"
+        :error="fieldError('name')"
+      >
+        <input
+          id="onboarding-name"
+          type="text"
+          placeholder="Enter your full name"
+          autocomplete="name"
+          v-model.trim="payload.name"
+          @blur="v$.name.$touch()"
+        />
+      </AppInputContainer>
+
       <div>
-        <AppInputContainer label="New Password" :isPassword="true">
+        <AppInputContainer
+          label="New Password"
+          :isPassword="true"
+          :error="fieldError('password')"
+        >
           <template #default="{ passwordIsVisible }">
             <input
               :type="passwordIsVisible ? 'text' : 'password'"
               placeholder="Enter your password"
+              autocomplete="new-password"
               v-model="payload.password"
+              @blur="v$.password.$touch()"
             />
           </template>
         </AppInputContainer>
@@ -179,19 +238,27 @@ const passwordIsValid = computed(() => ({
         </div>
       </div>
 
-      <AppInputContainer label="Confirm Password" :isPassword="true">
+      <AppInputContainer
+        label="Confirm Password"
+        :isPassword="true"
+        :error="fieldError('confirm_password')"
+      >
         <template #default="{ passwordIsVisible }">
           <input
             :type="passwordIsVisible ? 'text' : 'password'"
             placeholder="Enter your password"
+            autocomplete="new-password"
             v-model="payload.confirm_password"
+            @blur="v$.confirm_password.$touch()"
           />
         </template>
       </AppInputContainer>
-    </div>
 
-    <div class="w-full pt-5">
-      <AppButton block size="md" color="primary"> Activate account</AppButton>
-    </div>
+      <div class="w-full pt-5">
+        <AppButton block size="md" color="primary" :loading="acceptingInvitation">
+          Activate account</AppButton
+        >
+      </div>
+    </form>
   </AppAuthLayout>
 </template>

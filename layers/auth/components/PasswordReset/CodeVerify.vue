@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { PassResetSteps } from "../../composables/usePasswordResetStore";
-
-const { changeStep, email } = usePasswordResetStore();
+const {
+  email,
+  verifyResetCode,
+  verifyingCode,
+  resendResetCode,
+  resendingCode,
+} = usePasswordResetStore();
 
 const payload = reactive({
   code: "",
@@ -9,17 +13,21 @@ const payload = reactive({
 
 const digits = 6;
 
+/** Whether a full-length code has been entered. */
 const pinLengthIsValid = computed(() => {
   return payload.code.length === digits;
 });
 
-const resendCode = () => {
-  //   changeStep(PassResetSteps.REQUEST);
+/** Requests a fresh verification code for the stored email. */
+const resendCode = async () => {
+  if (resendingCode.value) return;
+  await resendResetCode().catch(() => {});
 };
 
-const submitForm = () => {
-  if (!pinLengthIsValid.value) return;
-  changeStep(PassResetSteps.CHANGE_PASSWORD);
+/** Verifies the entered code; the store advances the step on success. */
+const submitForm = async () => {
+  if (!pinLengthIsValid.value || verifyingCode.value) return;
+  await verifyResetCode(payload.code).catch(() => {});
 };
 </script>
 <template>
@@ -51,17 +59,18 @@ const submitForm = () => {
         Didn’t receive the code?
         <button
           type="button"
-          class="font-medium text-brand-color-007 hover:text-brand-color-005"
+          class="font-medium text-brand-color-007 hover:text-brand-color-005 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="resendingCode"
           @click="resendCode"
         >
-          Resend Code
+          {{ resendingCode ? "Resending..." : "Resend Code" }}
         </button>
       </div>
 
       <div class="w-full pt-5">
         <AppButton
           :disabled="!pinLengthIsValid"
-          @click="submitForm"
+          :loading="verifyingCode"
           block
           size="md"
           color="primary"

@@ -10,6 +10,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <AppToast />
   <NuxtLayout>
     <NuxtRouteAnnouncer />
     <NuxtPage />

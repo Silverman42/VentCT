@@ -17,6 +17,10 @@ import { joinURL } from "ufo";
 
 const SESSION_COOKIE = "tk";
 const MAINTENANCE_COOKIE = "mmsk";
+/** Backend paths whose successful JSON response carries a Sanctum token to persist as the session cookie. */
+const TOKEN_ISSUING_PATHS = [/^auth\/login$/, /^auth\/invitations\/[^/]+\/accept$/];
+/** Backend paths whose successful response ends the current session. */
+const SESSION_ENDING_PATHS = new Set(["auth/logout"]);
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const HOP_BY_HOP_HEADERS = new Set([
   "authorization",
@@ -120,7 +124,8 @@ export default defineEventHandler(async (event) => {
     const payloadObject = asJsonObject(payload);
     const data = asJsonObject(payloadObject?.data);
 
-    if (upstream.ok && normalizedPath === "admin/verify-2fa" && data?.token) {
+    const issuesToken = TOKEN_ISSUING_PATHS.some((pattern) => pattern.test(normalizedPath));
+    if (upstream.ok && issuesToken && data?.token) {
       setCookie(event, SESSION_COOKIE, String(data.token), {
         httpOnly: true,
         sameSite: "lax",
@@ -130,7 +135,8 @@ export default defineEventHandler(async (event) => {
       delete data.token;
     }
 
-    if (upstream.ok && normalizedPath === "admin/logout") {
+    // A logout or any rejected token means the stored session is no longer usable.
+    if ((upstream.ok && SESSION_ENDING_PATHS.has(normalizedPath)) || upstream.status === 401) {
       deleteCookie(event, SESSION_COOKIE, { httpOnly: true, path: "/", sameSite: "lax", secure: !import.meta.dev });
     }
 

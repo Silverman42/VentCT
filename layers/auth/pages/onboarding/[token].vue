@@ -1,14 +1,24 @@
 <script setup lang="ts">
-const { inviteIsAccpeted } = useOnboardingStore();
+const route = useRoute();
+const { inviteIsAccpeted, resetOnboarding } = useOnboardingStore();
+
+/** Invitation token from the route; arrays are reduced to their first value. */
+const token = computed(() => {
+  const param = route.params.token;
+  return String(Array.isArray(param) ? param[0] : (param ?? ""));
+});
 const changeKey = computed(() => (inviteIsAccpeted.value ? 1 : 0));
+
+onUnmounted(resetOnboarding);
 </script>
 <template>
   <main class="onboarding-container">
     <Transition name="fade-slide" mode="out-in" appear>
       <div class="step-wrapper" :key="changeKey">
-        <Onboarding v-if="!inviteIsAccpeted"></Onboarding>
+        <Onboarding v-if="!inviteIsAccpeted" :token="token"></Onboarding>
         <OnboardingSetPassword
           v-else-if="inviteIsAccpeted"
+          :token="token"
         ></OnboardingSetPassword>
       </div>
     </Transition>

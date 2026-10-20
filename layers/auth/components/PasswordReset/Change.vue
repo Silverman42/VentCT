@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { helpers, required, minLength } from "@vuelidate/validators";
 import { useVuelidate } from "@vuelidate/core";
-import { PassResetSteps } from "../../composables/usePasswordResetStore";
-
-const { changeStep } = usePasswordResetStore();
+const { resetPassword, resettingPassword } = usePasswordResetStore();
 
 const payload = reactive({
   password: "",
@@ -69,10 +67,13 @@ const passwordIsValid = computed(() => ({
     !v$.value.password.hasSpecialChar.$invalid && payload.password.length > 0,
 }));
 
-const updatePassword = () => {
+/** Validates the new password and submits it; the store advances to the success step. */
+const updatePassword = async () => {
   v$.value?.$touch();
   if (v$.value.$invalid) return;
-  changeStep(PassResetSteps.SUCCESS);
+  await resetPassword(payload.password, payload.confirm_password).catch(
+    () => {},
+  );
 };
 </script>
 <template>
@@ -211,7 +212,9 @@ const updatePassword = () => {
     </div>
 
     <div class="w-full pt-5">
-      <AppButton block size="md" color="primary"> Reset Password</AppButton>
+      <AppButton block size="md" color="primary" :loading="resettingPassword">
+        Reset Password</AppButton
+      >
     </div>
   </form>
 </template>

@@ -35,8 +35,6 @@ onMounted(loadEvent);
     class="relative flex min-h-dvh w-full flex-col bg-cover bg-top bg-no-repeat font-body"
     style="background-image: url('/img/attendance_bg.png')"
   >
-    <AppToast />
-
     <!-- Dims the light background in dark mode so the header text stays legible -->
     <div
       class="pointer-events-none absolute inset-0 dark:bg-dashboard-bg/70"

@@ -2,7 +2,7 @@
 import { useVuelidate } from "@vuelidate/core";
 import { email, helpers, required } from "@vuelidate/validators";
 
-const isLoading = ref(false);
+const { login, signingIn } = useAuthStore();
 
 const form = reactive({
   email: "",
@@ -22,17 +22,20 @@ const validations = computed(() => ({
 
 const v$ = useVuelidate(validations, form);
 
-/** Validates form input, simulates submission, and redirects to the dashboard page. */
+/** Validates the credentials, signs in, and redirects to the dashboard page. */
 const handleSubmit = async (): Promise<void> => {
-  const isValid = await v$.value.$validate();
-  if (!isValid) return;
+  v$.value.$touch();
+  if (v$.value.$invalid) return;
 
-  isLoading.value = true;
   try {
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await login({
+      email: form.email,
+      password: form.password,
+      device_name: "VentCT Admin Dashboard",
+    });
     await navigateTo("/dashboard");
-  } finally {
-    isLoading.value = false;
+  } catch {
+    // Failure feedback is surfaced by the store.
   }
 };
 </script>
@@ -107,7 +110,7 @@ const handleSubmit = async (): Promise<void> => {
           size="md"
           color="primary"
           type="submit"
-          :loading="isLoading"
+          :loading="signingIn"
         >
           Sign in
         </AppButton>
