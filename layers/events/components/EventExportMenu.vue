@@ -8,7 +8,7 @@ import {
 type ExportFormat = "csv" | "json";
 
 const props = defineProps<{
-  /** Events to export — normally the currently filtered list. */
+  /** Events to export — the currently loaded page of the list. */
   events: IEvent[];
 }>();
 
@@ -27,14 +27,15 @@ const toCsvCell = (value: string | number): string =>
 const serializeEvents = (format: ExportFormat): string => {
   if (format === "json") return JSON.stringify(props.events, null, 2);
 
-  const header = ["Name", "Target", "Location", "Date", "Status"];
+  const header = ["Name", "Target", "Venue", "Date", "Status", "Registration URL"];
   const rows = props.events.map((event) =>
     [
       event.name,
       event.target,
-      event.location,
-      event.date,
-      EVENT_STATUS_LABELS[event.status],
+      event.venue ?? "",
+      event.event_date ?? "",
+      EVENT_STATUS_LABELS[event.status] ?? event.status_label ?? event.status,
+      event.registration_url ?? "",
     ]
       .map(toCsvCell)
       .join(","),

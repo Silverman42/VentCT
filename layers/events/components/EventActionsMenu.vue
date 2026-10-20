@@ -1,15 +1,19 @@
 <script setup lang="ts">
+type EventAction = "newAttendance" | "edit" | "delete";
+
 const emit = defineEmits<{
   newAttendance: [];
+  edit: [];
   delete: [];
 }>();
 
 const dropdown = ref<{ closeDropdown: () => void } | null>(null);
 
 /** Closes the menu and emits the chosen event action. */
-const triggerAction = (action: "newAttendance" | "delete"): void => {
+const triggerAction = (action: EventAction): void => {
   dropdown.value?.closeDropdown();
   if (action === "newAttendance") emit("newAttendance");
+  else if (action === "edit") emit("edit");
   else emit("delete");
 };
 </script>
@@ -32,8 +36,17 @@ const triggerAction = (action: "newAttendance" | "delete"): void => {
           class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
           @click="triggerAction('newAttendance')"
         >
-          <Icon name="vent:edit" size="1rem" />
+          <Icon name="vent:profile-add" size="1rem" />
           New Attendance
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+          @click="triggerAction('edit')"
+        >
+          <Icon name="vent:edit" size="1rem" />
+          Edit Event
         </button>
         <button
           type="button"

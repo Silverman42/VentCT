@@ -1,87 +1,204 @@
 import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
+import { downloadResponseFile } from "~/utils/helpers/FileDownload";
+import type { IResponse } from "~/utils/types/misc/ResponseBody";
 import type { ITableBodyData } from "~/utils/types/misc/TableComponent";
-import { useEventMockData } from "./useEventMockData";
 
 /** Lifecycle status of an event. */
-export type EventStatus = "completed" | "pending" | "running";
+export type EventStatus = "pending" | "running" | "completed" | "cancelled";
+
+/** Status filter applied to the events list. */
+export type EventStatusFilter = EventStatus | "all";
 
 /** Display labels for each event status. */
 export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
-  completed: "Completed",
   pending: "Pending",
   running: "Running",
+  completed: "Completed",
+  cancelled: "Cancelled",
 };
 
-/** Verification filter applied to an event's attendance list. */
-export type AttendanceVerificationFilter = "all" | "verified" | "not_verified";
+/** Attendance status of a person recorded against an event. */
+export type AttendeeStatus = "attended" | "not_attended";
 
-/** Event record shown on the events list and detail pages. */
+/** Status filter applied to an event's attendee list. */
+export type AttendeeStatusFilter = AttendeeStatus | "all";
+
+/** Spreadsheet formats supported by the attendee export endpoint. */
+export type ExportFormat = "xlsx" | "csv";
+
+/** Attendance metrics returned with an event. */
+export interface IEventMetrics {
+  target: number;
+  total_attendees: number;
+  attended_count: number;
+  not_attended_count: number;
+}
+
+/** Event record returned by the events list endpoint. */
 export interface IEvent extends ITableBodyData {
   id: string;
+  campaign_id?: string;
   name: string;
-  target: number;
-  location: string;
-  /** ISO date string (YYYY-MM-DD). */
-  date: string;
+  slug: string;
+  description?: string | null;
+  venue: string;
+  /** ISO date-time string. */
+  event_date: string;
   status: EventStatus;
+  status_label?: string;
+  target: number;
+  banner_url?: string | null;
+  auto_check_in_on_scan?: boolean;
+  registration_url?: string;
+  metrics?: IEventMetrics;
+  created_at?: string;
+  updated_at?: string;
 }
 
-/** Person recorded as attending an event. */
+/** QR code payload embedded in the event detail response. */
+export interface IEventQrCodePayload {
+  registration_url: string;
+  qr_code_svg: string;
+}
+
+/** Event record returned by the event detail endpoint. */
+export interface IEventDetails extends IEvent {
+  qr_code?: IEventQrCodePayload;
+}
+
+/** Event counts by status for the summary cards. */
+export interface IEventSummary {
+  total_events: number;
+  pending_count: number;
+  running_count: number;
+  upcoming_count: number;
+  active_count: number;
+  completed_count: number;
+  cancelled_count: number;
+}
+
+/** Response data of the events list endpoint. */
+export interface IEventListResponse {
+  summary: IEventSummary;
+  events: IEvent[];
+}
+
+/** Person recorded as an attendee of an event. */
 export interface IEventAttendee extends ITableBodyData {
   id: string;
-  eventId: string;
   name: string;
   email: string;
-  phone: string;
-  hasTransaction: boolean;
-  isVerified: boolean;
+  phone?: string | null;
+  status: AttendeeStatus;
+  status_label?: string;
+  method?: string;
+  checked_in_at?: string | null;
 }
 
-/** Registered person who can be marked as attending an event. */
-export interface IAttendanceCandidate {
-  id: string;
+/** Attendee counts for an event. */
+export interface IEventAttendeeSummary {
+  total_attendees: number;
+  attended_count: number;
+  not_attended_count: number;
+}
+
+/** Response data of the event attendees endpoint. */
+export interface IEventAttendeeListResponse {
+  summary: IEventAttendeeSummary;
+  attendees: IEventAttendee[];
+}
+
+/** Response data of the standalone event QR code endpoint. */
+export interface IEventQrCode {
+  event_id: string;
   name: string;
-  email: string;
+  slug: string;
+  registration_url: string;
+  qr_code_svg: string;
 }
 
-/** Counts of events by status for the summary cards. */
-export interface IEventStats {
-  completed: number;
-  pending: number;
-  running: number;
+/** Pagination meta returned with list responses. */
+export interface IPaginationMeta {
+  current_page: number;
+  per_page: number;
+  total: number;
+  last_page?: number;
 }
 
 /** Payload for creating a new event. */
 export interface ICreateEventPayload {
+  campaign_id: string;
   name: string;
-  target: number;
-  location: string;
-  date: string;
+  venue: string;
+  /** Formatted as `YYYY-MM-DD HH:mm:ss`. */
+  event_date: string;
+  description?: string;
   status: EventStatus;
+  target: number;
+  banner_url?: string;
+  auto_check_in_on_scan: boolean;
 }
+
+/** Payload for updating an existing event. */
+export type IUpdateEventPayload = Partial<ICreateEventPayload>;
 
 /** Payload for manually creating an attendee for an event. */
 export interface ICreateAttendancePayload {
   name: string;
   email: string;
+  phone?: string;
 }
 
-/** Payload for marking registered candidates as attendees. */
+/** Request body for manually recording an attendance. */
+export interface ICreateAttendanceRequest extends ICreateAttendancePayload {
+  event_id: string;
+  campaign_id?: string;
+  status: AttendeeStatus;
+}
+
+/** Response data of the manual attendance endpoint. */
+export interface ICreatedAttendance {
+  id: string;
+  name: string;
+  email: string;
+  status: AttendeeStatus;
+}
+
+/** Payload for marking not-attended attendees as attended. */
 export interface IMarkAttendancePayload {
-  candidateIds: string[];
+  attendance_ids: string[];
 }
 
-/** Provides event state and fixture-backed actions for the events layer. */
-export const useEventStore = () => {
-  const { eventList, getEventAttendees, getAttendanceCandidates } =
-    useEventMockData();
+/** Response data of the batch mark attendance endpoint. */
+export interface IMarkAttendanceResponse {
+  updated_count: number;
+  status: AttendeeStatus;
+}
 
+/** Returns true when an API error is a 404 Not Found. */
+const isNotFoundError = (error: unknown): boolean =>
+  (error as { statusCode?: number })?.statusCode === 404;
+
+/**
+ * Reports an API failure through ApiErrorHandler. The toast is skipped for
+ * 401s because the session middleware already redirects to the login page.
+ */
+const handleApiError = (error: unknown, heading: string): void => {
+  const isUnauthenticated =
+    (error as { statusCode?: number })?.statusCode === 401;
+  ApiErrorHandler(error, !isUnauthenticated, false, heading);
+};
+
+/** Provides event API state and actions for the events layer. */
+export const useEventStore = () => {
   const endpoints = {
     EVENTS: "/admin/events",
     EVENT: (id: string) => `/admin/events/${id}`,
-    EVENT_ATTENDEES: (id: string) => `/admin/events/${id}/attendees`,
-    EVENT_MARK_ATTENDANCE: (id: string) => `/admin/events/${id}/attendance`,
     EVENT_QR_CODE: (id: string) => `/admin/events/${id}/qr-code`,
+    EVENT_ATTENDEES: (id: string) => `/admin/events/${id}/attendees`,
+    EVENT_EXPORT: (id: string) => `/admin/events/${id}/export`,
+    ATTENDANCES: "/admin/attendances",
+    MARK_ATTENDANCE: "/admin/attendances/mark-attendance",
   };
 
   const state = {
@@ -97,8 +214,20 @@ export const useEventStore = () => {
       "useEventStore.fetchingAttendees",
       () => false,
     ),
+    fetchingAttendanceCandidates: useState<boolean>(
+      "useEventStore.fetchingAttendanceCandidates",
+      () => false,
+    ),
+    fetchingQrCode: useState<boolean>(
+      "useEventStore.fetchingQrCode",
+      () => false,
+    ),
     creatingEvent: useState<boolean>(
       "useEventStore.creatingEvent",
+      () => false,
+    ),
+    updatingEvent: useState<boolean>(
+      "useEventStore.updatingEvent",
       () => false,
     ),
     deletingEvent: useState<boolean>(
@@ -113,216 +242,521 @@ export const useEventStore = () => {
       "useEventStore.markingAttendance",
       () => false,
     ),
-    savingQrCode: useState<boolean>(
-      "useEventStore.savingQrCode",
+    exportingAttendees: useState<boolean>(
+      "useEventStore.exportingAttendees",
       () => false,
     ),
-    events: useState<IEvent[]>("useEventStore.events", () => eventList),
-    selectedEvent: useState<IEvent | null>(
+
+    events: useState<IEvent[]>("useEventStore.events", () => []),
+    eventSummary: useState<IEventSummary | null>(
+      "useEventStore.eventSummary",
+      () => null,
+    ),
+    eventsPage: useState<number>("useEventStore.eventsPage", () => 1),
+    eventsPerPage: useState<number>("useEventStore.eventsPerPage", () => 10),
+    eventsLastPage: useState<number>("useEventStore.eventsLastPage", () => 1),
+    eventsTotal: useState<number>("useEventStore.eventsTotal", () => 0),
+    eventsSearch: useState<string>("useEventStore.eventsSearch", () => ""),
+    eventsStatus: useState<EventStatusFilter>(
+      "useEventStore.eventsStatus",
+      () => "all",
+    ),
+
+    selectedEvent: useState<IEventDetails | null>(
       "useEventStore.selectedEvent",
       () => null,
     ),
+    eventQrCode: useState<IEventQrCode | null>(
+      "useEventStore.eventQrCode",
+      () => null,
+    ),
+
     attendees: useState<IEventAttendee[]>(
       "useEventStore.attendees",
       () => [],
     ),
-    attendanceCandidates: useState<IAttendanceCandidate[]>(
+    attendeeSummary: useState<IEventAttendeeSummary | null>(
+      "useEventStore.attendeeSummary",
+      () => null,
+    ),
+    attendeesPage: useState<number>("useEventStore.attendeesPage", () => 1),
+    attendeesPerPage: useState<number>(
+      "useEventStore.attendeesPerPage",
+      () => 10,
+    ),
+    attendeesLastPage: useState<number>(
+      "useEventStore.attendeesLastPage",
+      () => 1,
+    ),
+    attendeesTotal: useState<number>("useEventStore.attendeesTotal", () => 0),
+    attendeesSearch: useState<string>(
+      "useEventStore.attendeesSearch",
+      () => "",
+    ),
+    attendeesStatus: useState<AttendeeStatusFilter>(
+      "useEventStore.attendeesStatus",
+      () => "all",
+    ),
+    attendanceCandidates: useState<IEventAttendee[]>(
       "useEventStore.attendanceCandidates",
       () => [],
     ),
   };
 
   const getters = {
-    /** Counts events per status for the index summary cards. */
-    eventStats: computed<IEventStats>(() =>
-      state.events.value.reduce<IEventStats>(
-        (stats, event) => {
-          stats[event.status] += 1;
-          return stats;
-        },
-        { completed: 0, pending: 0, running: 0 },
-      ),
-    ),
+    /** Event counts per status for the index summary cards. */
+    eventStats: computed(() => ({
+      total: state.eventSummary.value?.total_events ?? 0,
+      pending: state.eventSummary.value?.pending_count ?? 0,
+      running: state.eventSummary.value?.running_count ?? 0,
+      completed: state.eventSummary.value?.completed_count ?? 0,
+      cancelled: state.eventSummary.value?.cancelled_count ?? 0,
+    })),
 
-    /** Number of attendees recorded for the selected event. */
-    totalAttendees: computed(() => state.attendees.value.length),
+    /** Total attendees of the selected event, preferring the attendee summary. */
+    totalAttendees: computed(
+      () =>
+        state.attendeeSummary.value?.total_attendees ??
+        state.selectedEvent.value?.metrics?.total_attendees ??
+        0,
+    ),
+  };
+
+  /** Derives the last page from list meta, falling back to total / per_page. */
+  const resolveLastPage = (meta: IPaginationMeta | undefined): number => {
+    if (!meta) return 1;
+    if (meta.last_page) return Math.max(1, meta.last_page);
+    return Math.max(1, Math.ceil((meta.total ?? 0) / (meta.per_page || 1)));
   };
 
   const actions = {
-    /** Loads the event list into state and returns it. */
-    async fetchEvents() {
+    /**
+     * Fetches one page of events using the stored search/status filters.
+     * When a page beyond the first comes back empty or fails, the page state
+     * rolls back to the last valid page.
+     */
+    async fetchEvents(page: number = state.eventsPage.value) {
+      const previousPage = state.eventsPage.value;
+      state.eventsPage.value = page;
       state.fetchingEvents.value = true;
-      try {
-        return state.events.value;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Event fetch failed");
-        throw error;
-      } finally {
-        state.fetchingEvents.value = false;
-      }
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IEventListResponse, any, IPaginationMeta>>(
+          endpoints.EVENTS,
+          {
+            method: "GET",
+            query: {
+              page,
+              per_page: state.eventsPerPage.value,
+              search: state.eventsSearch.value || undefined,
+              status:
+                state.eventsStatus.value === "all"
+                  ? undefined
+                  : state.eventsStatus.value,
+            },
+          },
+        )
+        .then((response) => {
+          const events = response.data?.events ?? [];
+          if (page > 1 && events.length === 0) {
+            state.eventsPage.value = previousPage;
+            return state.events.value;
+          }
+
+          state.events.value = events;
+          state.eventSummary.value = response.data?.summary ?? null;
+          state.eventsTotal.value = response.meta?.total ?? events.length;
+          state.eventsLastPage.value = resolveLastPage(response.meta);
+          state.eventsPage.value = response.meta?.current_page ?? page;
+          return events;
+        })
+        .catch((error) => {
+          state.eventsPage.value = previousPage;
+          handleApiError(error, "Event fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingEvents.value = false;
+        });
     },
 
-    /** Loads one event into `selectedEvent`; returns null when it does not exist. */
+    /** Applies a search term, resets to page 1, and refetches events. */
+    async setEventsSearch(search: string) {
+      state.eventsSearch.value = search.trim();
+      return actions.fetchEvents(1);
+    },
+
+    /** Applies a status filter, resets to page 1, and refetches events. */
+    async setEventsStatus(status: EventStatusFilter) {
+      state.eventsStatus.value = status;
+      return actions.fetchEvents(1);
+    },
+
+    /**
+     * Loads one event into `selectedEvent`. Resolves to null without a toast
+     * when the event does not exist (404); other failures are rethrown.
+     */
     async fetchEventDetails(eventId: string) {
       state.fetchingEventDetails.value = true;
-      try {
-        const event =
-          state.events.value.find((item) => item.id === eventId) ?? null;
-        state.selectedEvent.value = event;
-        return event;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Event detail fetch failed");
-        throw error;
-      } finally {
-        state.fetchingEventDetails.value = false;
-      }
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IEventDetails>>(endpoints.EVENT(eventId), {
+          method: "GET",
+        })
+        .then((response) => {
+          state.selectedEvent.value = response.data ?? null;
+          return state.selectedEvent.value;
+        })
+        .catch((error) => {
+          state.selectedEvent.value = null;
+          if (isNotFoundError(error)) return null;
+          handleApiError(error, "Event detail fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingEventDetails.value = false;
+        });
     },
 
-    /** Loads the attendees and markable candidates for one event. */
-    async fetchEventAttendees(eventId: string) {
-      state.fetchingAttendees.value = true;
-      try {
-        state.attendees.value = getEventAttendees(eventId);
-        state.attendanceCandidates.value = getAttendanceCandidates(eventId);
-        return state.attendees.value;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Attendance fetch failed");
-        throw error;
-      } finally {
-        state.fetchingAttendees.value = false;
-      }
+    /** Fetches the event's self check-in QR code and registration link. */
+    async fetchEventQrCode(eventId: string) {
+      state.fetchingQrCode.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IEventQrCode>>(endpoints.EVENT_QR_CODE(eventId), {
+          method: "GET",
+        })
+        .then((response) => {
+          state.eventQrCode.value = response.data ?? null;
+          return state.eventQrCode.value;
+        })
+        .catch((error) => {
+          state.eventQrCode.value = null;
+          handleApiError(error, "QR code fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingQrCode.value = false;
+        });
     },
 
-    /** Creates an event and prepends it to the event list. */
+    /** Creates an event, then reloads the first page of the events list. */
     async createEvent(payload: ICreateEventPayload) {
       state.creatingEvent.value = true;
-      try {
-        const newEvent: IEvent = { id: `evt-${Date.now()}`, ...payload };
-        state.events.value.unshift(newEvent);
-        useToastHandler().triggerToast(
-          `${payload.name} has been created successfully.`,
-          "success",
-          "Event created",
-          "large",
-        );
-        return newEvent;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Event creation failed");
-        throw error;
-      } finally {
-        state.creatingEvent.value = false;
-      }
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IEvent>>(endpoints.EVENTS, {
+          method: "POST",
+          body: payload,
+        })
+        .then((response) => {
+          useToastHandler().triggerToast(
+            `${payload.name} has been created successfully.`,
+            "success",
+            "Event created",
+            "large",
+          );
+          void actions.fetchEvents(1).catch(() => undefined);
+          return response.data;
+        })
+        .catch((error) => {
+          handleApiError(error, "Event creation failed");
+          throw error;
+        })
+        .finally(() => {
+          state.creatingEvent.value = false;
+        });
     },
 
-    /** Deletes an event and clears it from the selection; returns true on success. */
+    /** Updates an event and merges the changes into the stored records. */
+    async updateEvent(eventId: string, payload: IUpdateEventPayload) {
+      state.updatingEvent.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<Partial<IEvent>>>(endpoints.EVENT(eventId), {
+          method: "PUT",
+          body: payload,
+        })
+        .then((response) => {
+          const changes = { ...payload, ...(response.data ?? {}) } as Partial<IEvent>;
+          if (state.selectedEvent.value?.id === eventId) {
+            state.selectedEvent.value = {
+              ...state.selectedEvent.value,
+              ...changes,
+            };
+          }
+          state.events.value = state.events.value.map((event) =>
+            event.id === eventId ? { ...event, ...changes } : event,
+          );
+          useToastHandler().triggerToast(
+            "The event has been updated successfully.",
+            "success",
+            "Event updated",
+            "large",
+          );
+          return response.data;
+        })
+        .catch((error) => {
+          handleApiError(error, "Event update failed");
+          throw error;
+        })
+        .finally(() => {
+          state.updatingEvent.value = false;
+        });
+    },
+
+    /** Deletes an event and clears it from the list and selection. */
     async deleteEvent(eventId: string) {
       state.deletingEvent.value = true;
-      try {
-        state.events.value = state.events.value.filter(
-          (event) => event.id !== eventId,
-        );
-        if (state.selectedEvent.value?.id === eventId) {
-          state.selectedEvent.value = null;
-        }
-        useToastHandler().triggerToast(
-          "The event has been permanently deleted.",
-          "success",
-          "Event deleted",
-          "large",
-        );
-        return true;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Event deletion failed");
-        throw error;
-      } finally {
-        state.deletingEvent.value = false;
-      }
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<{ id: string }>>(endpoints.EVENT(eventId), {
+          method: "DELETE",
+        })
+        .then(() => {
+          state.events.value = state.events.value.filter(
+            (event) => event.id !== eventId,
+          );
+          if (state.selectedEvent.value?.id === eventId) {
+            state.selectedEvent.value = null;
+          }
+          useToastHandler().triggerToast(
+            "The event has been permanently deleted.",
+            "success",
+            "Event deleted",
+            "large",
+          );
+          return true;
+        })
+        .catch((error) => {
+          handleApiError(error, "Event deletion failed");
+          throw error;
+        })
+        .finally(() => {
+          state.deletingEvent.value = false;
+        });
     },
 
-    /** Adds a manually entered attendee to the event's attendance list. */
-    async createAttendance(eventId: string, payload: ICreateAttendancePayload) {
+    /**
+     * Fetches one page of an event's attendees using the stored filters.
+     * Rolls the page back when a later page is empty or the request fails.
+     */
+    async fetchEventAttendees(
+      eventId: string,
+      page: number = state.attendeesPage.value,
+    ) {
+      const previousPage = state.attendeesPage.value;
+      state.attendeesPage.value = page;
+      state.fetchingAttendees.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<
+          IResponse<IEventAttendeeListResponse, any, IPaginationMeta>
+        >(endpoints.EVENT_ATTENDEES(eventId), {
+          method: "GET",
+          query: {
+            page,
+            per_page: state.attendeesPerPage.value,
+            search: state.attendeesSearch.value || undefined,
+            status:
+              state.attendeesStatus.value === "all"
+                ? undefined
+                : state.attendeesStatus.value,
+          },
+        })
+        .then((response) => {
+          const attendees = response.data?.attendees ?? [];
+          if (page > 1 && attendees.length === 0) {
+            state.attendeesPage.value = previousPage;
+            return state.attendees.value;
+          }
+
+          state.attendees.value = attendees;
+          state.attendeeSummary.value = response.data?.summary ?? null;
+          state.attendeesTotal.value = response.meta?.total ?? attendees.length;
+          state.attendeesLastPage.value = resolveLastPage(response.meta);
+          state.attendeesPage.value = response.meta?.current_page ?? page;
+          return attendees;
+        })
+        .catch((error) => {
+          state.attendeesPage.value = previousPage;
+          handleApiError(error, "Attendance fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingAttendees.value = false;
+        });
+    },
+
+    /** Applies an attendee search term, resets to page 1, and refetches. */
+    async setAttendeesSearch(eventId: string, search: string) {
+      state.attendeesSearch.value = search.trim();
+      return actions.fetchEventAttendees(eventId, 1);
+    },
+
+    /** Applies an attendee status filter, resets to page 1, and refetches. */
+    async setAttendeesStatus(eventId: string, status: AttendeeStatusFilter) {
+      state.attendeesStatus.value = status;
+      return actions.fetchEventAttendees(eventId, 1);
+    },
+
+    /** Clears attendee list filters and data, e.g. when switching events. */
+    resetAttendees() {
+      state.attendees.value = [];
+      state.attendeeSummary.value = null;
+      state.attendeesPage.value = 1;
+      state.attendeesLastPage.value = 1;
+      state.attendeesTotal.value = 0;
+      state.attendeesSearch.value = "";
+      state.attendeesStatus.value = "all";
+    },
+
+    /** Loads not-yet-attended attendees that can be marked as attended. */
+    async fetchAttendanceCandidates(eventId: string, search: string = "") {
+      state.fetchingAttendanceCandidates.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IEventAttendeeListResponse>>(
+          endpoints.EVENT_ATTENDEES(eventId),
+          {
+            method: "GET",
+            query: {
+              page: 1,
+              per_page: 100,
+              status: "not_attended",
+              search: search.trim() || undefined,
+            },
+          },
+        )
+        .then((response) => {
+          state.attendanceCandidates.value = response.data?.attendees ?? [];
+          return state.attendanceCandidates.value;
+        })
+        .catch((error) => {
+          handleApiError(error, "Attendee fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingAttendanceCandidates.value = false;
+        });
+    },
+
+    /** Refreshes the attendee table and event metrics after attendance changes. */
+    async refreshAttendance(eventId: string) {
+      await Promise.allSettled([
+        actions.fetchEventAttendees(eventId),
+        actions.fetchEventDetails(eventId),
+      ]);
+    },
+
+    /** Manually records an attended attendee for the event. */
+    async createAttendance(event: IEvent, payload: ICreateAttendancePayload) {
       state.creatingAttendance.value = true;
-      try {
-        const attendee: IEventAttendee = {
-          id: `${eventId}-att-${Date.now()}`,
-          eventId,
-          name: payload.name,
-          email: payload.email,
-          phone: "—",
-          hasTransaction: false,
-          isVerified: false,
-        };
-        state.attendees.value.unshift(attendee);
-        useToastHandler().triggerToast(
-          `${payload.name} has been added to this event.`,
-          "success",
-          "Attendance created",
-          "large",
-        );
-        return attendee;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Attendance creation failed");
-        throw error;
-      } finally {
-        state.creatingAttendance.value = false;
-      }
+
+      const body: ICreateAttendanceRequest = {
+        event_id: event.id,
+        campaign_id: event.campaign_id || undefined,
+        name: payload.name,
+        email: payload.email,
+        phone: payload.phone || undefined,
+        status: "attended",
+      };
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<ICreatedAttendance>>(endpoints.ATTENDANCES, {
+          method: "POST",
+          body,
+        })
+        .then((response) => {
+          useToastHandler().triggerToast(
+            `${payload.name} has been added to this event.`,
+            "success",
+            "Attendance created",
+            "large",
+          );
+          void actions.refreshAttendance(event.id);
+          return response.data;
+        })
+        .catch((error) => {
+          handleApiError(error, "Attendance creation failed");
+          throw error;
+        })
+        .finally(() => {
+          state.creatingAttendance.value = false;
+        });
     },
 
-    /** Moves the selected candidates into the attendance list; returns the new attendees. */
+    /** Marks the selected attendees as attended and refreshes the event data. */
     async markAttendance(eventId: string, payload: IMarkAttendancePayload) {
       state.markingAttendance.value = true;
-      try {
-        const selectedIds = new Set(payload.candidateIds);
-        const marked = state.attendanceCandidates.value
-          .filter((candidate) => selectedIds.has(candidate.id))
-          .map<IEventAttendee>((candidate) => ({
-            id: `${eventId}-att-${candidate.id}`,
-            eventId,
-            name: candidate.name,
-            email: candidate.email,
-            phone: "—",
-            hasTransaction: false,
-            isVerified: false,
-          }));
 
-        state.attendees.value.unshift(...marked);
-        state.attendanceCandidates.value =
-          state.attendanceCandidates.value.filter(
-            (candidate) => !selectedIds.has(candidate.id),
+      return useApiClientHandler()
+        .$apiClient<IResponse<IMarkAttendanceResponse>>(
+          endpoints.MARK_ATTENDANCE,
+          {
+            method: "POST",
+            body: { attendance_ids: payload.attendance_ids, status: "attended" },
+          },
+        )
+        .then((response) => {
+          const count =
+            response.data?.updated_count ?? payload.attendance_ids.length;
+          const markedIds = new Set(payload.attendance_ids);
+          state.attendanceCandidates.value =
+            state.attendanceCandidates.value.filter(
+              (candidate) => !markedIds.has(candidate.id),
+            );
+          useToastHandler().triggerToast(
+            `${count} attendee${count === 1 ? "" : "s"} marked as attended.`,
+            "success",
+            "Attendance updated",
+            "large",
           );
-
-        useToastHandler().triggerToast(
-          `${marked.length} attendee${marked.length === 1 ? "" : "s"} marked as attended.`,
-          "success",
-          "Attendance updated",
-          "large",
-        );
-        return marked;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "Mark attendance failed");
-        throw error;
-      } finally {
-        state.markingAttendance.value = false;
-      }
+          void actions.refreshAttendance(eventId);
+          return response.data;
+        })
+        .catch((error) => {
+          handleApiError(error, "Mark attendance failed");
+          throw error;
+        })
+        .finally(() => {
+          state.markingAttendance.value = false;
+        });
     },
 
-    /** Saves the event's check-in QR code so attendees can self-register. */
-    async saveEventQrCode(eventId: string) {
-      state.savingQrCode.value = true;
-      try {
-        useToastHandler().triggerToast(
-          "The check-in QR code has been saved for this event.",
-          "success",
-          "QR code saved",
-          "large",
-        );
-        return eventId;
-      } catch (error) {
-        ApiErrorHandler(error, true, false, "QR code save failed");
-        throw error;
-      } finally {
-        state.savingQrCode.value = false;
-      }
+    /** Downloads the event's attendees as a spreadsheet using the active filters. */
+    async exportEventAttendees(eventId: string, format: ExportFormat) {
+      state.exportingAttendees.value = true;
+
+      return useApiClientHandler()
+        .$apiClient.raw<Blob>(endpoints.EVENT_EXPORT(eventId), {
+          method: "GET",
+          responseType: "blob",
+          query: {
+            format,
+            search: state.attendeesSearch.value || undefined,
+            status:
+              state.attendeesStatus.value === "all"
+                ? undefined
+                : state.attendeesStatus.value,
+          },
+        })
+        .then((response) =>
+          downloadResponseFile({
+            responseData: response._data,
+            contentType: response.headers.get("content-type"),
+            contentDisposition: response.headers.get("content-disposition"),
+            fallbackFileName: `${state.selectedEvent.value?.slug || "event"}-attendees`,
+            fallbackExtension: format,
+          }),
+        )
+        .catch((error) => {
+          handleApiError(error, "Attendee export failed");
+          throw error;
+        })
+        .finally(() => {
+          state.exportingAttendees.value = false;
+        });
     },
   };
 
