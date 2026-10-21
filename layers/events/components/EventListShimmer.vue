@@ -13,9 +13,9 @@
       <span class="h-4 w-64 rounded-md shimmer-bg" />
     </div>
 
-    <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <section class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <article
-        v-for="card in 3"
+        v-for="card in 4"
         :key="card"
         class="flex min-h-[104px] flex-col justify-between rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
       >

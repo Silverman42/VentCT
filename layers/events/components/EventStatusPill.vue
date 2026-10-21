@@ -7,19 +7,24 @@ import {
 
 const props = defineProps<{
   status: EventStatus;
+  /** Label sent by the API; used when the status is not a known value. */
+  statusLabel?: string;
 }>();
 
 const STATUS_COLORS: Record<EventStatus, ColorsType> = {
   completed: "green",
   pending: "orange",
   running: "blue",
+  cancelled: "red",
 };
 
 /** Pill color for the event status, falling back to gray for unknown values. */
 const color = computed<ColorsType>(() => STATUS_COLORS[props.status] ?? "gray");
 
 /** Visible label for the event status. */
-const label = computed(() => EVENT_STATUS_LABELS[props.status] ?? props.status);
+const label = computed(
+  () => EVENT_STATUS_LABELS[props.status] ?? props.statusLabel ?? props.status,
+);
 </script>
 
 <template>

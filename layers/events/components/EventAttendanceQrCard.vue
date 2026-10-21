@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { QrcodeCanvas } from "qrcode.vue";
+import { copyToClipboard } from "~/utils/helpers/ClipboardCopy";
 import { DateFormatter } from "~/utils/helpers/DateFormatter";
 import type { IEvent } from "../composables/useEventStore";
 
@@ -7,32 +8,43 @@ const props = defineProps<{
   event: IEvent;
 }>();
 
-const emit = defineEmits<{
-  saved: [];
-}>();
-
 const LOGO_URL = "/img/logo_primary.svg";
 const EXPORT_WIDTH = 720;
 const EXPORT_HEIGHT = 960;
 const EXPORT_QR_SIZE = 420;
 
-const { saveEventQrCode, savingQrCode } = useEventStore();
+const { eventQrCode, fetchingQrCode, fetchEventQrCode } = useEventStore();
 const { triggerToast } = useToastHandler();
 const qrCodeContainer = ref<HTMLElement | null>(null);
 const downloading = ref(false);
+const qrCodeFailed = ref(false);
 
-/** Self check-in link encoded in the QR code for this event. */
-const checkInUrl = computed(
-  () =>
-    `https://app.vent.africa/events/${encodeURIComponent(props.event.id)}/check-in`,
+/** Public self-registration link encoded in the QR code for this event. */
+const registrationUrl = computed(() =>
+  eventQrCode.value?.event_id === props.event.id
+    ? eventQrCode.value.registration_url
+    : (props.event.registration_url ?? ""),
 );
 
 /** Human-readable event date, e.g. "October 26, 2026". */
 const formattedDate = computed(() =>
-  props.event.date
-    ? DateFormatter.formatWithPattern(props.event.date, "MMMM d, yyyy")
+  props.event.event_date
+    ? DateFormatter.formatWithPattern(props.event.event_date, "MMMM d, yyyy")
     : "Date to be announced",
 );
+
+/** Event venue with a fallback for missing values. */
+const venue = computed(() => props.event.venue || "Venue to be announced");
+
+/** Fetches the event's QR code payload, recording failures for the error state. */
+const loadQrCode = async (): Promise<void> => {
+  qrCodeFailed.value = false;
+  try {
+    await fetchEventQrCode(props.event.id);
+  } catch {
+    qrCodeFailed.value = true;
+  }
+};
 
 /** Returns the rendered QR canvas, or null while it is still mounting. */
 const getQrCanvas = (): HTMLCanvasElement | null =>
@@ -85,7 +97,7 @@ const buildCheckInCard = async (
   context.fillStyle = "#242933";
   context.font = "20px Arial, sans-serif";
   context.fillText(formattedDate.value, centerX, 254);
-  context.fillText(props.event.location, centerX, 286, EXPORT_WIDTH - 96);
+  context.fillText(venue.value, centerX, 286, EXPORT_WIDTH - 96);
 
   const qrX = (EXPORT_WIDTH - EXPORT_QR_SIZE) / 2;
   context.drawImage(qrCanvas, qrX, 336, EXPORT_QR_SIZE, EXPORT_QR_SIZE);
@@ -120,7 +132,7 @@ const downloadQrCode = async (): Promise<void> => {
     const card = await buildCheckInCard(qrCanvas);
     const anchor = document.createElement("a");
     anchor.href = card.toDataURL("image/png");
-    anchor.download = `event-${props.event.id}-check-in-qr.png`;
+    anchor.download = `${props.event.slug || `event-${props.event.id}`}-check-in-qr.png`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -129,19 +141,43 @@ const downloadQrCode = async (): Promise<void> => {
   }
 };
 
-/** Saves the QR code for the event and notifies the parent so it can close. */
-const saveQrCode = async (): Promise<void> => {
-  try {
-    await saveEventQrCode(props.event.id);
-    emit("saved");
-  } catch {
-    // Handled in the store via ApiErrorHandler.
-  }
+/** Copies the registration link to the clipboard and reports the result. */
+const copyRegistrationLink = async (): Promise<void> => {
+  const copied = await copyToClipboard(registrationUrl.value);
+  triggerToast(
+    copied
+      ? "The registration link has been copied to your clipboard."
+      : "We couldn't copy the link. Please copy it manually.",
+    copied ? "success" : "error",
+    copied ? "Link copied" : "Copy failed",
+    "small",
+  );
 };
+
+onMounted(() => {
+  void loadQrCode();
+});
 </script>
 
 <template>
-  <div>
+  <EventAttendanceQrCardShimmer v-if="fetchingQrCode" />
+
+  <section
+    v-else-if="qrCodeFailed || !registrationUrl"
+    class="flex flex-col items-center justify-center rounded-2xl border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
+  >
+    <h3 class="text-lg font-medium text-dashboard-heading">
+      We couldn't load the QR code
+    </h3>
+    <p class="mt-2 max-w-md text-sm text-dashboard-text">
+      Something went wrong while generating this event's check-in QR code.
+    </p>
+    <AppButton type="button" size="md" class="mt-5" @click="loadQrCode">
+      Retry
+    </AppButton>
+  </section>
+
+  <div v-else>
     <section
       class="rounded-2xl bg-gradient-to-b from-brand-color-013 via-brand-color-013 to-brand-color-012 px-5 pt-6 pb-8 text-center sm:px-8 dark:from-dashboard-bg-dark dark:via-dashboard-bg-dark dark:to-dashboard-bg"
     >
@@ -162,7 +198,7 @@ const saveQrCode = async (): Promise<void> => {
           class="mt-1 flex items-center justify-center gap-1.5 text-sm text-dashboard-heading"
         >
           <Icon name="vent:location" size="0.95rem" class="shrink-0" />
-          {{ props.event.location }}
+          {{ venue }}
         </p>
       </div>
 
@@ -176,7 +212,7 @@ const saveQrCode = async (): Promise<void> => {
           <div class="rounded-2xl bg-white p-3">
             <QrcodeCanvas
               :id="`event-qr-${props.event.id}`"
-              :value="checkInUrl"
+              :value="registrationUrl"
               :size="300"
               level="H"
               background="#ffffff"
@@ -200,11 +236,10 @@ const saveQrCode = async (): Promise<void> => {
         type="button"
         size="md"
         color="primary"
-        :loading="savingQrCode"
         class="sm:min-w-40"
-        @click="saveQrCode"
+        @click="copyRegistrationLink"
       >
-        Save
+        Copy link
       </AppButton>
       <AppButton
         type="button"

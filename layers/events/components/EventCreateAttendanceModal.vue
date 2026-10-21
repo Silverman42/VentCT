@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useVuelidate } from "@vuelidate/core";
-import { email, helpers, required } from "@vuelidate/validators";
+import { email, helpers, maxLength, required } from "@vuelidate/validators";
 import type { TabsData } from "~/utils/types/misc/Tabs";
 import type {
   ICreateAttendancePayload,
@@ -25,9 +25,10 @@ const methodTabs: TabsData[] = [
   { id: "manual", name: "Manual" },
 ];
 
-const form = reactive<ICreateAttendancePayload>({
+const form = reactive<Required<ICreateAttendancePayload>>({
   name: "",
   email: "",
+  phone: "",
 });
 
 /** Vuelidate rules for manually creating an attendee. */
@@ -36,6 +37,12 @@ const validations = computed(() => ({
   email: {
     required: helpers.withMessage("Email address is required", required),
     email: helpers.withMessage("Enter a valid email address", email),
+  },
+  phone: {
+    maxLength: helpers.withMessage(
+      "Phone number is too long",
+      maxLength(20),
+    ),
   },
 }));
 
@@ -49,6 +56,7 @@ const fieldError = (field: keyof ICreateAttendancePayload): string =>
 const resetForm = (): void => {
   form.name = "";
   form.email = "";
+  form.phone = "";
   v$.value.$reset();
 };
 
@@ -69,7 +77,7 @@ const submit = async (): Promise<void> => {
   if (v$.value.$invalid) return;
 
   try {
-    await createAttendance(props.event.id, { ...form });
+    await createAttendance(props.event, { ...form });
     close();
   } catch {
     // Handled in the store via ApiErrorHandler.
@@ -100,7 +108,7 @@ defineExpose({ open, close });
         class="!max-w-full"
       >
         <template #qr>
-          <EventAttendanceQrCard :event="props.event" @saved="close" />
+          <EventAttendanceQrCard :event="props.event" />
         </template>
 
         <template #manual>
@@ -135,6 +143,22 @@ defineExpose({ open, close });
                   placeholder="name@example.com"
                   :aria-invalid="v$.email.$error"
                   @blur="v$.email.$touch()"
+                />
+              </AppInputContainer>
+
+              <AppInputContainer
+                label="Phone Number (optional)"
+                for="event-attendance-phone"
+                :error="fieldError('phone')"
+              >
+                <input
+                  id="event-attendance-phone"
+                  v-model.trim="form.phone"
+                  type="tel"
+                  autocomplete="tel"
+                  placeholder="+2348012345678"
+                  :aria-invalid="v$.phone.$error"
+                  @blur="v$.phone.$touch()"
                 />
               </AppInputContainer>
             </div>

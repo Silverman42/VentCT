@@ -13,6 +13,7 @@
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
         <span class="h-10 w-full rounded-lg shimmer-bg sm:w-72" />
         <span class="h-10 w-28 rounded-lg shimmer-bg" />
+        <span class="h-10 w-24 rounded-lg shimmer-bg" />
         <span class="h-10 w-36 rounded-lg shimmer-bg" />
       </div>
     </div>

@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
+import { DateFormatter } from "~/utils/helpers/DateFormatter";
 import type {
   ITableBodyData,
   ITableHeaderData,
 } from "~/utils/types/misc/TableComponent";
 import {
   EVENT_STATUS_LABELS,
-  type EventStatus,
+  type EventStatusFilter,
   type IEvent,
 } from "../composables/useEventStore";
 
@@ -14,30 +16,40 @@ interface NewModalController {
   open: () => Promise<void> | void;
 }
 
-type EventStatusFilter = EventStatus | "all";
-
-const EVENTS_PER_PAGE = 10;
-
-const { events, eventStats, fetchingEvents, fetchEvents } = useEventStore();
+const {
+  events,
+  eventStats,
+  fetchingEvents,
+  eventsPage,
+  eventsPerPage,
+  eventsTotal,
+  eventsSearch,
+  eventsStatus,
+  fetchEvents,
+  setEventsSearch,
+  setEventsStatus,
+} = useEventStore();
 
 const filterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const eventNewModal = ref<NewModalController | null>(null);
-const searchInput = ref("");
-const statusFilter = ref<EventStatusFilter>("all");
-const currentPage = ref(1);
+const searchInput = ref(eventsSearch.value);
+const hasLoaded = ref(false);
 const loadFailed = ref(false);
 
 const tableHeadings: ITableHeaderData[] = [
   { id: "name", name: "Name" },
+  { id: "venue", name: "Venue", isHiddenOnMobile: true },
+  { id: "event_date", name: "Date", isHiddenOnMobile: true },
   { id: "target", name: "Target" },
   { id: "status", name: "Status" },
 ];
 
 const filterOptions: EventStatusFilter[] = [
   "all",
-  "completed",
   "pending",
   "running",
+  "completed",
+  "cancelled",
 ];
 
 /** Summary cards shown above the events table. */
@@ -45,46 +57,48 @@ const statCards = computed(() => [
   { label: "Completed Events", value: eventStats.value.completed },
   { label: "Pending", value: eventStats.value.pending },
   { label: "Running", value: eventStats.value.running },
+  { label: "Cancelled", value: eventStats.value.cancelled },
 ]);
-
-/** Events matching the active search term and status filter. */
-const filteredEvents = computed(() => {
-  const searchTerm = searchInput.value.trim().toLocaleLowerCase();
-
-  return events.value.filter((event) => {
-    const matchesStatus =
-      statusFilter.value === "all" || event.status === statusFilter.value;
-    const matchesSearch =
-      !searchTerm ||
-      [event.name, event.location, String(event.target)]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-
-    return matchesStatus && matchesSearch;
-  });
-});
-
-/** Total number of pages for the filtered events. */
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredEvents.value.length / EVENTS_PER_PAGE)),
-);
-
-/** The slice of filtered events shown on the current page. */
-const pagedEvents = computed(() => {
-  const start = (currentPage.value - 1) * EVENTS_PER_PAGE;
-  return filteredEvents.value.slice(start, start + EVENTS_PER_PAGE);
-});
 
 /** Formats a status filter option into its visible label. */
 const getFilterLabel = (filter: EventStatusFilter): string =>
   filter === "all" ? "All" : EVENT_STATUS_LABELS[filter];
 
-/** Applies a status filter and closes the filter menu. */
-const selectFilter = (filter: EventStatusFilter): void => {
-  statusFilter.value = filter;
-  filterDropdown.value?.closeDropdown();
+/** Formats an API event date for the table, with a fallback for missing values. */
+const formatEventDate = (value?: string): string =>
+  value ? DateFormatter.formatDate(value) : "—";
+
+/** Runs a list request and records whether it failed for the error state. */
+const runListRequest = async (request: () => Promise<unknown>): Promise<void> => {
+  loadFailed.value = false;
+  try {
+    await request();
+  } catch {
+    loadFailed.value = true;
+  } finally {
+    hasLoaded.value = true;
+  }
 };
+
+/** Loads the current page of events. */
+const loadEvents = (): Promise<void> => runListRequest(() => fetchEvents());
+
+/** Applies a status filter, closes the filter menu, and reloads page 1. */
+const selectFilter = (filter: EventStatusFilter): void => {
+  filterDropdown.value?.closeDropdown();
+  if (filter === eventsStatus.value) return;
+  void runListRequest(() => setEventsStatus(filter));
+};
+
+/** Loads the requested page of events. */
+const changePage = (page: number): void => {
+  void fetchEvents(page).catch(() => undefined);
+};
+
+/** Sends the debounced search term to the API. */
+const applySearch = useDebounceFn((term: string) => {
+  void runListRequest(() => setEventsSearch(term));
+}, 300);
 
 /** Navigates to the details page of the clicked event. */
 const openEventDetail = (row: ITableBodyData): void => {
@@ -96,27 +110,9 @@ const openNewEventModal = (): void => {
   void eventNewModal.value?.open();
 };
 
-/** Loads events and records whether the request failed. */
-const loadEvents = async (): Promise<void> => {
-  loadFailed.value = false;
-  try {
-    await fetchEvents();
-  } catch {
-    loadFailed.value = true;
-  }
-};
-
-watch([searchInput, statusFilter], () => {
-  currentPage.value = 1;
+watch(searchInput, (term) => {
+  if (term.trim() !== eventsSearch.value) void applySearch(term);
 });
-
-watch(
-  totalPages,
-  (lastPage) => {
-    if (currentPage.value > lastPage) currentPage.value = lastPage;
-  },
-  { immediate: true },
-);
 
 onMounted(() => {
   void loadEvents();
@@ -124,7 +120,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <EventListShimmer v-if="fetchingEvents" />
+  <EventListShimmer v-if="!hasLoaded" />
 
   <div v-else class="flex w-full flex-col gap-6">
     <AppHeading title="Events" subtitle="Track and manage events record." />
@@ -151,7 +147,7 @@ onMounted(() => {
 
     <template v-else>
       <section
-        class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
         aria-label="Event summary"
       >
         <article
@@ -172,7 +168,8 @@ onMounted(() => {
 
       <TableComponent
         :headings="tableHeadings"
-        :body="pagedEvents"
+        :body="events"
+        :is-loading="fetchingEvents"
         clickable
         empty-heading="No events found"
         empty-subtitle="Try changing the search query or status filter, or create a new event."
@@ -195,7 +192,7 @@ onMounted(() => {
                     type="button"
                     class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
                   >
-                    Filter by: {{ getFilterLabel(statusFilter) }}
+                    Filter by: {{ getFilterLabel(eventsStatus) }}
                     <Icon name="vent:arrow-down" size="0.9rem" />
                   </button>
                 </template>
@@ -206,7 +203,7 @@ onMounted(() => {
                       :key="option"
                       type="button"
                       class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                      :class="{ 'bg-dashboard-bg-dark': statusFilter === option }"
+                      :class="{ 'bg-dashboard-bg-dark': eventsStatus === option }"
                       @click="selectFilter(option)"
                     >
                       Filter by: {{ getFilterLabel(option) }}
@@ -215,7 +212,7 @@ onMounted(() => {
                 </template>
               </AppDropdown>
 
-              <EventExportMenu :events="filteredEvents" />
+              <EventExportMenu :events="events" />
             </template>
 
             <template #actions>
@@ -230,6 +227,14 @@ onMounted(() => {
           </TableComponentHeader>
         </template>
 
+        <template #col_venue="{ rowData }">
+          {{ rowData.venue || "—" }}
+        </template>
+
+        <template #col_event_date="{ rowData }">
+          {{ formatEventDate(rowData.event_date) }}
+        </template>
+
         <template #col_target="{ rowData }">
           {{ Number(rowData.target).toLocaleString("en-US") }}
         </template>
@@ -240,10 +245,10 @@ onMounted(() => {
 
         <template #table-footer>
           <TableComponentPagination
-            :page="currentPage"
-            :per-page="EVENTS_PER_PAGE"
-            :total-items="filteredEvents.length"
-            @change-page="currentPage = $event"
+            :page="eventsPage"
+            :per-page="eventsPerPage"
+            :total-items="eventsTotal"
+            @change-page="changePage"
           />
         </template>
       </TableComponent>

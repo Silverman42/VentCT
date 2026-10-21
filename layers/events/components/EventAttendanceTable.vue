@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
+import { DateFormatter } from "~/utils/helpers/DateFormatter";
 import type { ITableHeaderData } from "~/utils/types/misc/TableComponent";
-import type { AttendanceVerificationFilter } from "../composables/useEventStore";
+import type {
+  AttendeeStatusFilter,
+  ExportFormat,
+} from "../composables/useEventStore";
 
 interface MarkModalController {
   open: () => Promise<void> | void;
@@ -17,72 +22,83 @@ const emit = defineEmits<{
   retry: [];
 }>();
 
-const ATTENDEES_PER_PAGE = 10;
-
-const { attendees, fetchingAttendees } = useEventStore();
+const {
+  attendees,
+  attendeeSummary,
+  fetchingAttendees,
+  exportingAttendees,
+  attendeesPage,
+  attendeesPerPage,
+  attendeesTotal,
+  attendeesSearch,
+  attendeesStatus,
+  fetchEventAttendees,
+  setAttendeesSearch,
+  setAttendeesStatus,
+  exportEventAttendees,
+} = useEventStore();
 
 const filterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const exportDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const markAttendanceModal = ref<MarkModalController | null>(null);
-const searchInput = ref("");
-const verificationFilter = ref<AttendanceVerificationFilter>("all");
-const currentPage = ref(1);
+const searchInput = ref(attendeesSearch.value);
 
 const tableHeadings: ITableHeaderData[] = [
   { id: "name", name: "Name" },
   { id: "email", name: "Email" },
   { id: "phone", name: "Phone", isHiddenOnMobile: true },
-  { id: "hasTransaction", name: "Transaction Status" },
-  { id: "isVerified", name: "Verification Status" },
+  { id: "status", name: "Status" },
+  { id: "checked_in_at", name: "Checked In", isHiddenOnMobile: true },
 ];
 
-const filterOptions: AttendanceVerificationFilter[] = [
+const filterOptions: AttendeeStatusFilter[] = [
   "all",
-  "verified",
-  "not_verified",
+  "attended",
+  "not_attended",
 ];
 
-/** Attendees matching the active search term and verification filter. */
-const filteredAttendees = computed(() => {
-  const searchTerm = searchInput.value.trim().toLocaleLowerCase();
+const exportOptions: Array<{ value: ExportFormat; label: string }> = [
+  { value: "xlsx", label: "Export as XLSX" },
+  { value: "csv", label: "Export as CSV" },
+];
 
-  return attendees.value.filter((attendee) => {
-    const matchesFilter =
-      verificationFilter.value === "all" ||
-      (verificationFilter.value === "verified" && attendee.isVerified) ||
-      (verificationFilter.value === "not_verified" && !attendee.isVerified);
-    const matchesSearch =
-      !searchTerm ||
-      [attendee.name, attendee.email, attendee.phone]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-
-    return matchesFilter && matchesSearch;
-  });
-});
-
-/** Total number of pages for the filtered attendees. */
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredAttendees.value.length / ATTENDEES_PER_PAGE)),
+/** True until the first attendee response arrives, so the full shimmer is shown. */
+const isInitialLoad = computed(
+  () => fetchingAttendees.value && !attendeeSummary.value,
 );
 
-/** The slice of filtered attendees shown on the current page. */
-const pagedAttendees = computed(() => {
-  const start = (currentPage.value - 1) * ATTENDEES_PER_PAGE;
-  return filteredAttendees.value.slice(start, start + ATTENDEES_PER_PAGE);
-});
-
-/** Formats a verification filter option into its visible label. */
-const getFilterLabel = (filter: AttendanceVerificationFilter): string => {
-  if (filter === "verified") return "Verified";
-  if (filter === "not_verified") return "Not verified";
+/** Formats an attendee status filter option into its visible label. */
+const getFilterLabel = (filter: AttendeeStatusFilter): string => {
+  if (filter === "attended") return "Attended";
+  if (filter === "not_attended") return "Not attended";
   return "All";
 };
 
-/** Applies a verification filter and closes the filter menu. */
-const selectFilter = (filter: AttendanceVerificationFilter): void => {
-  verificationFilter.value = filter;
+/** Formats an attendee check-in time, with a fallback when not checked in. */
+const formatCheckIn = (value?: string | null): string =>
+  value ? DateFormatter.formatWithPattern(value, "MMM d, yyyy · h:mm a") : "—";
+
+/** Applies an attendee status filter, closes the menu, and reloads page 1. */
+const selectFilter = (filter: AttendeeStatusFilter): void => {
   filterDropdown.value?.closeDropdown();
+  if (filter === attendeesStatus.value) return;
+  void setAttendeesStatus(props.eventId, filter).catch(() => undefined);
+};
+
+/** Loads the requested page of attendees. */
+const changePage = (page: number): void => {
+  void fetchEventAttendees(props.eventId, page).catch(() => undefined);
+};
+
+/** Sends the debounced search term to the API. */
+const applySearch = useDebounceFn((term: string) => {
+  void setAttendeesSearch(props.eventId, term).catch(() => undefined);
+}, 300);
+
+/** Downloads the attendee list in the chosen format and closes the menu. */
+const exportAttendees = (format: ExportFormat): void => {
+  exportDropdown.value?.closeDropdown();
+  void exportEventAttendees(props.eventId, format).catch(() => undefined);
 };
 
 /** Opens the Mark Attendance modal. */
@@ -90,24 +106,20 @@ const openMarkAttendanceModal = (): void => {
   void markAttendanceModal.value?.open();
 };
 
-watch([searchInput, verificationFilter], () => {
-  currentPage.value = 1;
+watch(searchInput, (term) => {
+  if (term.trim() !== attendeesSearch.value) void applySearch(term);
 });
 
-watch(
-  totalPages,
-  (lastPage) => {
-    if (currentPage.value > lastPage) currentPage.value = lastPage;
-  },
-  { immediate: true },
-);
+watch(attendeesSearch, (term) => {
+  if (term !== searchInput.value.trim()) searchInput.value = term;
+});
 </script>
 
 <template>
-  <EventAttendanceTableShimmer v-if="fetchingAttendees" />
+  <EventAttendanceTableShimmer v-if="isInitialLoad" />
 
   <section
-    v-else-if="props.loadFailed"
+    v-else-if="props.loadFailed && !attendeeSummary"
     class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
   >
     <h2 class="text-lg font-medium text-dashboard-heading">
@@ -124,7 +136,8 @@ watch(
   <div v-else>
     <TableComponent
       :headings="tableHeadings"
-      :body="pagedAttendees"
+      :body="attendees"
+      :is-loading="fetchingAttendees"
       empty-heading="No attendees found"
       empty-subtitle="Try changing the search query or filter, or mark attendance for this event."
     >
@@ -145,7 +158,7 @@ watch(
                   type="button"
                   class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
                 >
-                  Filter by: {{ getFilterLabel(verificationFilter) }}
+                  Filter by: {{ getFilterLabel(attendeesStatus) }}
                   <Icon name="vent:arrow-down" size="0.9rem" />
                 </button>
               </template>
@@ -157,11 +170,45 @@ watch(
                     type="button"
                     class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
                     :class="{
-                      'bg-dashboard-bg-dark': verificationFilter === option,
+                      'bg-dashboard-bg-dark': attendeesStatus === option,
                     }"
                     @click="selectFilter(option)"
                   >
                     Filter by: {{ getFilterLabel(option) }}
+                  </button>
+                </div>
+              </template>
+            </AppDropdown>
+
+            <AppDropdown
+              ref="exportDropdown"
+              position="right"
+              :width-is-finite="false"
+            >
+              <template #default>
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  :disabled="exportingAttendees"
+                >
+                  <Icon
+                    :name="exportingAttendees ? 'vent:loading' : 'vent:excel'"
+                    size="0.95rem"
+                    :class="{ 'animate-spin': exportingAttendees }"
+                  />
+                  Export
+                </button>
+              </template>
+              <template #dropdown_body>
+                <div class="min-w-40 space-y-1">
+                  <button
+                    v-for="option in exportOptions"
+                    :key="option.value"
+                    type="button"
+                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                    @click="exportAttendees(option.value)"
+                  >
+                    {{ option.label }}
                   </button>
                 </div>
               </template>
@@ -180,24 +227,26 @@ watch(
         </TableComponentHeader>
       </template>
 
-      <template #col_hasTransaction="{ rowData }">
-        <AppPills :color="rowData.hasTransaction ? 'green' : 'red'">
-          {{ rowData.hasTransaction ? "Yes" : "NO" }}
+      <template #col_phone="{ rowData }">
+        {{ rowData.phone || "—" }}
+      </template>
+
+      <template #col_status="{ rowData }">
+        <AppPills :color="rowData.status === 'attended' ? 'green' : 'red'">
+          {{ rowData.status === "attended" ? "Attended" : "Not attended" }}
         </AppPills>
       </template>
 
-      <template #col_isVerified="{ rowData }">
-        <AppPills :color="rowData.isVerified ? 'green' : 'red'">
-          {{ rowData.isVerified ? "Verified" : "Not verified" }}
-        </AppPills>
+      <template #col_checked_in_at="{ rowData }">
+        {{ formatCheckIn(rowData.checked_in_at) }}
       </template>
 
       <template #table-footer>
         <TableComponentPagination
-          :page="currentPage"
-          :per-page="ATTENDEES_PER_PAGE"
-          :total-items="filteredAttendees.length"
-          @change-page="currentPage = $event"
+          :page="attendeesPage"
+          :per-page="attendeesPerPage"
+          :total-items="attendeesTotal"
+          @change-page="changePage"
         />
       </template>
     </TableComponent>
