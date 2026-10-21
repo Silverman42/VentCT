@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Timer } from "~/utils/helpers/Timer";
+
 const {
   email,
   verifyResetCode,
@@ -18,11 +20,47 @@ const pinLengthIsValid = computed(() => {
   return payload.code.length === digits;
 });
 
-/** Requests a fresh verification code for the stored email. */
-const resendCode = async () => {
-  if (resendingCode.value) return;
-  await resendResetCode().catch(() => {});
+const resendCooldownSeconds = 25;
+
+/** Seconds left before another code can be requested; 0 means resend is available. */
+const resendSecondsLeft = ref(0);
+
+/** The remaining cooldown formatted as mm:ss for display. */
+const resendCountdownLabel = computed(() => {
+  const { formattedMinutes, formattedSeconds } = Timer.formatTime({
+    days: 0,
+    hours: 0,
+    minutes: Math.floor(resendSecondsLeft.value / 60),
+    seconds: resendSecondsLeft.value % 60,
+    timeDiffSecs: resendSecondsLeft.value,
+    timeDiffMilSecs: resendSecondsLeft.value * 1000,
+  });
+  return `${formattedMinutes}:${formattedSeconds}`;
+});
+
+/** Starts the resend cooldown, hiding the resend link until it elapses. */
+const startResendCountdown = () => {
+  resendSecondsLeft.value = resendCooldownSeconds;
+  const endTime = new Date(Date.now() + resendCooldownSeconds * 1000);
+
+  Timer.initiateCountdown(endTime, (isFinished, interval) => {
+    resendSecondsLeft.value = isFinished
+      ? 0
+      : Math.ceil(interval.timeDiffMilSecs / 1000);
+  });
 };
+
+/** Requests a fresh verification code and restarts the cooldown on success. */
+const resendCode = async () => {
+  if (resendingCode.value || resendSecondsLeft.value > 0) return;
+  await resendResetCode()
+    .then(() => startResendCountdown())
+    .catch(() => {});
+};
+
+// The code was just sent when this step mounts, so start the cooldown immediately.
+onMounted(startResendCountdown);
+onBeforeUnmount(() => Timer.resetInterval());
 
 /** Verifies the entered code; the store advances the step on success. */
 const submitForm = async () => {
@@ -57,7 +95,14 @@ const submitForm = async () => {
 
       <div class="text-center text-sm text-dashboard-text">
         Didn’t receive the code?
+        <span
+          v-if="resendSecondsLeft > 0"
+          class="font-medium text-dashboard-heading tabular-nums"
+        >
+          Resend in {{ resendCountdownLabel }}
+        </span>
         <button
+          v-else
           type="button"
           class="font-medium text-brand-color-007 hover:text-brand-color-005 disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="resendingCode"
