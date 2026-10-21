@@ -12,6 +12,11 @@ const props = withDefaults(
   },
 );
 
+const emit = defineEmits<{
+  /** Fired when an actionable metric card is clicked. */
+  select: [metric: IAppMetric];
+}>();
+
 /** Picks responsive grid columns so each row fills the width with its card count. */
 const getRowColumns = (cardCount: number): string => {
   if (cardCount >= 4) return "sm:grid-cols-2 xl:grid-cols-4";
@@ -29,10 +34,17 @@ const getRowColumns = (cardCount: number): string => {
       class="grid grid-cols-1 gap-4"
       :class="getRowColumns(row.length)"
     >
-      <article
+      <component
+        :is="metric.actionable ? 'button' : 'article'"
         v-for="metric in row"
-        :key="metric.label"
-        class="flex min-h-[132px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
+        :key="metric.key ?? metric.label"
+        :type="metric.actionable ? 'button' : undefined"
+        class="flex min-h-[132px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5 text-left"
+        :class="{
+          'cursor-pointer transition hover:border-brand-color-default focus-visible:border-brand-color-default focus-visible:outline-none':
+            metric.actionable,
+        }"
+        @click="metric.actionable && emit('select', metric)"
       >
         <p class="text-sm text-dashboard-heading">{{ metric.label }}</p>
         <p
@@ -40,10 +52,18 @@ const getRowColumns = (cardCount: number): string => {
         >
           {{ metric.value }}
         </p>
-        <p class="mt-auto pt-3 text-[0.6875rem] text-dashboard-text">
+        <p
+          class="mt-auto flex items-center gap-2 pt-3 text-[0.6875rem] text-dashboard-text"
+        >
           {{ metric.description }}
+          <Icon
+            v-if="metric.actionable"
+            name="vent:arrow-right"
+            size="0.75rem"
+            aria-hidden="true"
+          />
         </p>
-      </article>
+      </component>
     </section>
   </div>
 </template>

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
+import type { IAppMetric } from "~/utils/types/misc/Metric";
 import type { ITableHeaderData } from "~/utils/types/misc/TableComponent";
 import type {
   AudienceVerificationFilter,
   CampaignAudienceMember,
+  CampaignCountryFilter,
+  CampaignMetricKey,
   CampaignPromoter,
+  CampaignStatus,
   PromoterAudienceFilter,
 } from "../composables/useCampaignMockData";
 
@@ -14,15 +18,41 @@ interface CampaignModalController {
   close: () => void;
 }
 
+interface BreakdownModalController {
+  open: (key: CampaignMetricKey) => void;
+  close: () => void;
+}
+
+/** Date range shape bound to `AppDateTimeDropdown`. */
+interface OverviewDateRange {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  custom?: boolean;
+}
+
 const DETAIL_TABLE_PAGE_SIZE = 10;
 
 const props = defineProps<{
   campaignId: string;
 }>();
 
-const { getCampaignDetails } = useCampaignMockData();
+const {
+  campaignCountryOptions,
+  getCampaignDetails,
+  getCampaignMetrics,
+  getCampaignOverview,
+} = useCampaignMockData();
 const editCampaignModal = ref<CampaignModalController | null>(null);
 const qrCodeModal = ref<CampaignModalController | null>(null);
+const breakdownModal = ref<BreakdownModalController | null>(null);
+const actionsDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const countryDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const overviewCountry = ref<CampaignCountryFilter>("all");
+const overviewDateRange = ref<OverviewDateRange | null>(
+  createLastThirtyDaysRange(),
+);
 const promoterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const audienceDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const promoterSearchInput = ref("");
@@ -51,8 +81,63 @@ const audienceHeadings: ITableHeaderData[] = [
   { id: "status", name: "Status" },
 ];
 
+/** Builds the default "Last 30 days" overview window ending today. */
+function createLastThirtyDaysRange(): OverviewDateRange {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 29);
+  start.setHours(0, 0, 0, 0);
+
+  return {
+    key: "last30days",
+    label: "Last 30 days",
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
 /** Resolves the requested campaign data and makes missing fixtures explicit. */
 const campaignDetails = computed(() => getCampaignDetails(props.campaignId));
+
+/** Maps the campaign lifecycle status to its badge colour and label. */
+const statusPill = computed(() => {
+  const status: CampaignStatus =
+    campaignDetails.value?.campaign.status ?? "pending";
+  const pills: Record<
+    CampaignStatus,
+    { color: "green" | "orange" | "gray"; label: string }
+  > = {
+    running: { color: "green", label: "Running" },
+    pending: { color: "orange", label: "Pending" },
+    closed: { color: "gray", label: "Closed" },
+  };
+  return pills[status];
+});
+
+/** Per-country overview rows narrowed by the country and date filters. */
+const overviewRows = computed(() =>
+  getCampaignOverview(props.campaignId, {
+    country: overviewCountry.value,
+    dateRange: overviewDateRange.value,
+  }),
+);
+
+/** Overview cards split into the two four-card rows of the design. */
+const overviewMetricRows = computed<IAppMetric[][]>(() => {
+  const metrics: IAppMetric[] = getCampaignMetrics(overviewRows.value).map(
+    (metric) => ({ ...metric, actionable: Boolean(metric.key) }),
+  );
+  return [metrics.slice(0, 4), metrics.slice(4)];
+});
+
+/** Label of the active country filter for the dropdown trigger. */
+const overviewCountryLabel = computed(
+  () =>
+    campaignCountryOptions.find(
+      (option) => option.value === overviewCountry.value,
+    )?.label ?? "All Country",
+);
 
 /** Debounces promoter filtering until the user pauses typing. */
 const updatePromoterSearch = useDebounceFn((value: string) => {
@@ -169,12 +254,26 @@ const getAudienceFilterLabel = (filter: AudienceVerificationFilter): string => {
 
 /** Opens the validation-only campaign edit form for the current campaign. */
 const openEditCampaignModal = (): void => {
+  actionsDropdown.value?.closeDropdown();
   editCampaignModal.value?.open();
 };
 
 /** Opens the QR pass for the current campaign. */
 const openQrCodeModal = (): void => {
+  actionsDropdown.value?.closeDropdown();
   qrCodeModal.value?.open();
+};
+
+/** Applies the overview country filter and closes its menu. */
+const selectOverviewCountry = (country: CampaignCountryFilter): void => {
+  overviewCountry.value = country;
+  countryDropdown.value?.closeDropdown();
+};
+
+/** Opens the breakdown modal for an actionable overview card. */
+const openMetricBreakdown = (metric: IAppMetric): void => {
+  if (!metric.key) return;
+  breakdownModal.value?.open(metric.key as CampaignMetricKey);
 };
 
 watch(promoterSearchInput, (value) => updatePromoterSearch(value));
@@ -207,9 +306,7 @@ watch(
 
 <template>
   <div v-if="campaignDetails" class="flex w-full flex-col gap-6">
-    <section
-      class="flex flex-col gap-4 border-b border-dashboard-card-border pb-5 lg:flex-row lg:items-start lg:justify-between"
-    >
+    <section class="flex items-start justify-between gap-4">
       <div>
         <h2
           class="text-lg md:text-2xl font-medium tracking-tight text-dashboard-heading"
@@ -221,60 +318,104 @@ watch(
           Referral code -
           {{ campaignDetails.campaign.referralCode }}
         </p>
-        <AppPills class="mt-2 text-xs" color="green">Running</AppPills>
+        <AppPills class="mt-2 text-xs" :color="statusPill.color">
+          {{ statusPill.label }}
+        </AppPills>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-lg border border-brand-color-default px-3 py-2 text-sm text-brand-color-default transition hover:bg-brand-color-default/10"
-          aria-label="Generate campaign QR code"
-          @click="openQrCodeModal"
-        >
-          <Icon name="vent:ai-scan" size="1rem" />
-          Generate QR Code
-        </button>
-        <button
-          type="button"
-          class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashboard-card-border text-dashboard-text transition hover:border-brand-color-default hover:text-brand-color-default"
-          aria-label="Edit campaign"
-          @click="openEditCampaignModal"
-        >
-          <Icon name="vent:edit" size="1rem" />
-        </button>
-        <button
-          type="button"
-          class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashboard-card-border text-red-400 transition hover:border-red-400"
-          aria-label="Delete campaign (not available in mock mode)"
-        >
-          <Icon name="vent:trash" size="1rem" />
-        </button>
-      </div>
+      <AppDropdown
+        ref="actionsDropdown"
+        position="right"
+        :width-is-finite="false"
+      >
+        <template #default>
+          <button
+            type="button"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashboard-card-border text-dashboard-heading transition hover:border-brand-color-default hover:text-brand-color-default"
+            aria-label="Campaign actions"
+          >
+            <Icon name="vent:more" size="1.1rem" />
+          </button>
+        </template>
+        <template #dropdown_body>
+          <div class="min-w-44 space-y-1">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+              @click="openQrCodeModal"
+            >
+              <Icon name="vent:ai-scan" size="1rem" />
+              Generate QR Code
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+              @click="openEditCampaignModal"
+            >
+              <Icon name="vent:edit" size="1rem" />
+              Edit campaign
+            </button>
+            <button
+              type="button"
+              class="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-400 opacity-60"
+              disabled
+              title="Not available in mock mode"
+            >
+              <Icon name="vent:trash" size="1rem" />
+              Delete campaign
+            </button>
+          </div>
+        </template>
+      </AppDropdown>
     </section>
 
     <section
-      class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-      aria-label="Campaign summary metrics"
+      class="flex flex-wrap items-center justify-end gap-2 border-b border-dashboard-card-border pb-5"
+      aria-label="Campaign overview filters"
     >
-      <article
-        v-for="metric in campaignDetails.metrics"
-        :key="metric.label"
-        class="flex min-h-[124px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
+      <AppDateTimeDropdown
+        v-model="overviewDateRange"
+        button-class="!rounded-lg !px-3 !py-2 !font-normal"
+      />
+      <AppDropdown
+        ref="countryDropdown"
+        position="right"
+        :width-is-finite="false"
       >
-        <p class="text-xs text-dashboard-text">{{ metric.label }}</p>
-        <p
-          class="mt-2 text-2xl font-medium tracking-tight text-dashboard-heading"
-        >
-          {{ metric.value }}
-        </p>
-        <p
-          v-if="metric.description"
-          class="mt-auto pt-3 text-[0.6875rem] text-dashboard-text"
-        >
-          {{ metric.description }}
-        </p>
-      </article>
+        <template #default>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg-darker px-3 py-3 text-sm text-dashboard-heading transition hover:border-brand-color-default"
+          >
+            <Icon name="vent:global" size="1rem" />
+            {{ overviewCountryLabel }}
+            <Icon name="vent:arrow-down" size="0.9rem" />
+          </button>
+        </template>
+        <template #dropdown_body>
+          <div class="min-w-38 space-y-1">
+            <button
+              v-for="option in campaignCountryOptions"
+              :key="option.value"
+              type="button"
+              class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+              :class="{
+                'bg-dashboard-bg-dark': overviewCountry === option.value,
+              }"
+              @click="selectOverviewCountry(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </template>
+      </AppDropdown>
     </section>
+
+    <AppMetricRows
+      :rows="overviewMetricRows"
+      aria-label="Campaign summary metrics"
+      @select="openMetricBreakdown"
+    />
 
     <section class="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <TableComponent
@@ -434,6 +575,7 @@ watch(
       ref="qrCodeModal"
       :campaign="campaignDetails.campaign"
     />
+    <CampaignMetricBreakdownModal ref="breakdownModal" :rows="overviewRows" />
   </div>
 
   <section

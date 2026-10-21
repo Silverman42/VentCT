@@ -5,10 +5,6 @@ const props = defineProps<{
   totalVolume: string;
   promoters: CampaignPromoterContribution[];
 }>();
-
-/** Keeps a non-zero bar visible while labels retain the exact contribution value. */
-const getVisibleContribution = (contribution: number): string =>
-  `${Math.max(contribution, 4)}%`;
 </script>
 
 <template>
@@ -46,19 +42,12 @@ const getVisibleContribution = (contribution: number): string =>
             {{ promoter.contribution }}%
           </p>
         </div>
-        <div
-          class="mt-1.5 h-2 overflow-hidden rounded-full bg-dashboard-chart-track"
-          role="progressbar"
-          :aria-label="`${promoter.name} contribution to transaction volume`"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          :aria-valuenow="promoter.contribution"
-        >
-          <div
-            class="h-full rounded-l-full bg-dashboard-chart-volume"
-            :style="{ width: getVisibleContribution(promoter.contribution) }"
-          />
-        </div>
+        <AppProgressBar
+          class="mt-1.5"
+          :value="promoter.contribution"
+          :min-visible="4"
+          :label="`${promoter.name} contribution to transaction volume`"
+        />
       </li>
     </ul>
 

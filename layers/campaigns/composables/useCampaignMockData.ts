@@ -1,3 +1,4 @@
+import { NumberFormatter } from "~/utils/helpers/NumberFormatter";
 import type { ITableBodyData } from "~/utils/types/misc/TableComponent";
 
 /** Supported lifecycle states for fixture-backed campaigns. */
@@ -28,6 +29,90 @@ export interface CampaignMetric {
   label: string;
   value: string;
   description?: string;
+}
+
+/** Country scopes available in the campaign overview filter. */
+export type CampaignCountryFilter = "all" | "NG" | "GH";
+
+/** Date window forwarded to overview queries; ignored by fixtures until the API exists. */
+export interface CampaignDateRange {
+  start: string;
+  end: string;
+}
+
+/** Filters applied to the campaign overview metrics. */
+export interface CampaignOverviewFilters {
+  country: CampaignCountryFilter;
+  dateRange?: CampaignDateRange | null;
+}
+
+/** Cash and crypto split for SafeWallet-only figures. */
+export interface CampaignSafeWalletSplit {
+  safeWalletCash: number;
+  safeWalletCrypto: number;
+}
+
+/** EasyPay and SafeWallet split for transaction figures. */
+export interface CampaignProviderSplit extends CampaignSafeWalletSplit {
+  easyPay: number;
+}
+
+/** Raw overview figures for one country in a campaign. Volumes are in USD. */
+export interface CampaignOverviewCountry {
+  countryCode: Exclude<CampaignCountryFilter, "all">;
+  countryName: string;
+  promoters: number;
+  audience: { verified: number; unverified: number };
+  transactionCount: CampaignProviderSplit;
+  transactionVolume: CampaignProviderSplit;
+  depositCount: CampaignSafeWalletSplit;
+  depositVolume: CampaignSafeWalletSplit;
+  utilityCount: { airtime: number; data: number };
+  withdrawalCount: CampaignSafeWalletSplit;
+}
+
+/** Overview metrics that open a breakdown, including SafeWallet drill-downs. */
+export type CampaignMetricKey =
+  | "audience"
+  | "transactionCount"
+  | "transactionVolume"
+  | "depositCount"
+  | "depositVolume"
+  | "utilityCount"
+  | "withdrawalCount"
+  | "safeWalletCount"
+  | "safeWalletVolume";
+
+/** An overview card; cards with a key open a breakdown modal. */
+export interface CampaignOverviewMetric extends CampaignMetric {
+  description: string;
+  key?: CampaignMetricKey;
+}
+
+/** A sub-card inside a breakdown modal. */
+export interface CampaignBreakdownCard {
+  label: string;
+  value: string;
+  caption?: string;
+  drillDown?: CampaignMetricKey;
+}
+
+/** One country row inside a breakdown modal. */
+export interface CampaignBreakdownCountry {
+  name: string;
+  value: string;
+  percent: number;
+  caption: string;
+  totalLabel: string;
+}
+
+/** Template-ready view model for a metric breakdown modal. */
+export interface CampaignMetricBreakdown {
+  title: string;
+  total: string;
+  cards: CampaignBreakdownCard[];
+  countryHeading?: string;
+  countries: CampaignBreakdownCountry[];
 }
 
 /** Represents one promoter attached to a campaign. */
@@ -70,7 +155,6 @@ export interface CampaignPerformanceSeries {
 /** Bundles every fixture required by the single-campaign dashboard. */
 export interface CampaignDetails {
   campaign: Campaign;
-  metrics: CampaignMetric[];
   promoters: CampaignPromoter[];
   audience: CampaignAudienceMember[];
   topPromoters: CampaignPromoterContribution[];
@@ -122,15 +206,50 @@ const buildCampaigns = (): Campaign[] =>
 
 const campaigns = buildCampaigns();
 
-const campaignMetrics: CampaignMetric[] = [
-  { label: "Promoters", value: "7", description: "Total campaign promoters" },
-  { label: "Audience", value: "149", description: "Total unique audience" },
-  { label: "Verify Audience", value: "119", description: "Unique verified audience" },
-  { label: "Total Transactions", value: "4", description: "Total transactions" },
-  { label: "Successful Transactions", value: "3", description: "Successful transactions" },
-  { label: "EazyPay Volume", value: "$5,221", description: "Aggregated volume across EazyPay" },
-  { label: "Safewallet Volume", value: "$6,000", description: "Aggregated volume across Safewallet" },
-  { label: "Total Volume", value: "$11,221", description: "Aggregated volume" },
+const campaignOverviewCountries: CampaignOverviewCountry[] = [
+  {
+    countryCode: "NG",
+    countryName: "Nigeria",
+    promoters: 5,
+    audience: { verified: 70, unverified: 32 },
+    transactionCount: { easyPay: 41, safeWalletCash: 19, safeWalletCrypto: 15 },
+    transactionVolume: {
+      easyPay: 4000,
+      safeWalletCash: 600,
+      safeWalletCrypto: 600,
+    },
+    depositCount: { safeWalletCash: 18, safeWalletCrypto: 84 },
+    depositVolume: { safeWalletCash: 1700, safeWalletCrypto: 2300 },
+    utilityCount: { airtime: 57, data: 36 },
+    withdrawalCount: { safeWalletCash: 100, safeWalletCrypto: 60 },
+  },
+  {
+    countryCode: "GH",
+    countryName: "Ghana",
+    promoters: 2,
+    audience: { verified: 29, unverified: 18 },
+    transactionCount: { easyPay: 24, safeWalletCash: 11, safeWalletCrypto: 9 },
+    transactionVolume: {
+      easyPay: 500,
+      safeWalletCash: 100,
+      safeWalletCrypto: 200,
+    },
+    depositCount: { safeWalletCash: 4, safeWalletCrypto: 16 },
+    depositVolume: { safeWalletCash: 500, safeWalletCrypto: 721 },
+    utilityCount: { airtime: 15, data: 10 },
+    withdrawalCount: { safeWalletCash: 30, safeWalletCrypto: 20 },
+  },
+];
+
+const campaignCountryOptions: Array<{
+  value: CampaignCountryFilter;
+  label: string;
+}> = [
+  { value: "all", label: "All Country" },
+  ...campaignOverviewCountries.map((country) => ({
+    value: country.countryCode,
+    label: country.countryName,
+  })),
 ];
 
 const campaignPromoters: CampaignPromoter[] = [
@@ -226,7 +345,6 @@ const getCampaignDetails = (id: string): CampaignDetails | undefined => {
 
   return {
     campaign,
-    metrics: campaignMetrics,
     promoters: campaignPromoters,
     audience: campaignAudience,
     topPromoters,
@@ -235,10 +353,315 @@ const getCampaignDetails = (id: string): CampaignDetails | undefined => {
   };
 };
 
+/**
+ * Returns the per-country overview rows for a campaign, narrowed by the country filter.
+ * `dateRange` is accepted for API parity; fixtures do not vary by date.
+ */
+const getCampaignOverview = (
+  id: string,
+  filters: CampaignOverviewFilters,
+): CampaignOverviewCountry[] => {
+  if (!getCampaignById(id)) return [];
+  if (filters.country === "all") return campaignOverviewCountries;
+  return campaignOverviewCountries.filter(
+    (country) => country.countryCode === filters.country,
+  );
+};
+
+/** Formats a count with thousands separators. */
+const formatCount = (value: number): string => value.toLocaleString("en-US");
+
+/** Formats a USD amount for display, dropping cents on whole numbers. */
+const formatUsd = (value: number): string =>
+  `$${NumberFormatter.format(value, { decimals: Number.isInteger(value) ? 0 : 2 })}`;
+
+/** Sums a numeric field selected from every overview row. */
+const sumRows = (
+  rows: CampaignOverviewCountry[],
+  select: (row: CampaignOverviewCountry) => number,
+): number => rows.reduce((total, row) => total + select(row), 0);
+
+/** Sums the SafeWallet cash and crypto parts of a split. */
+const safeWalletTotal = (split: CampaignSafeWalletSplit): number =>
+  split.safeWalletCash + split.safeWalletCrypto;
+
+/** Computes a one-decimal percentage, returning 0 when the total is empty. */
+const toPercent = (value: number, total: number): number =>
+  total > 0 ? Math.round((value / total) * 1000) / 10 : 0;
+
+/** Selects each breakdown's per-country total from a raw overview row. */
+const metricTotals: Record<
+  CampaignMetricKey,
+  (row: CampaignOverviewCountry) => number
+> = {
+  audience: (row) => row.audience.verified + row.audience.unverified,
+  transactionCount: (row) =>
+    row.transactionCount.easyPay + safeWalletTotal(row.transactionCount),
+  transactionVolume: (row) =>
+    row.transactionVolume.easyPay + safeWalletTotal(row.transactionVolume),
+  depositCount: (row) => safeWalletTotal(row.depositCount),
+  depositVolume: (row) => safeWalletTotal(row.depositVolume),
+  utilityCount: (row) => row.utilityCount.airtime + row.utilityCount.data,
+  withdrawalCount: (row) => safeWalletTotal(row.withdrawalCount),
+  safeWalletCount: (row) => safeWalletTotal(row.transactionCount),
+  safeWalletVolume: (row) => safeWalletTotal(row.transactionVolume),
+};
+
+/** Builds the eight overview cards from the filtered country rows. */
+const getCampaignMetrics = (
+  rows: CampaignOverviewCountry[],
+): CampaignOverviewMetric[] => {
+  /** Sums a breakdown total across the filtered rows. */
+  const total = (key: CampaignMetricKey) => sumRows(rows, metricTotals[key]);
+
+  return [
+    {
+      label: "Promoters",
+      value: formatCount(sumRows(rows, (row) => row.promoters)),
+      description: "Total campaign promoters",
+    },
+    {
+      key: "audience",
+      label: "Audience",
+      value: formatCount(total("audience")),
+      description: "Total unique audience",
+    },
+    {
+      key: "transactionCount",
+      label: "Transaction Count",
+      value: formatCount(total("transactionCount")),
+      description: "Total transaction counts",
+    },
+    {
+      key: "depositCount",
+      label: "Deposit Counts",
+      value: formatCount(total("depositCount")),
+      description: "Total deposit counts",
+    },
+    {
+      key: "transactionVolume",
+      label: "Transaction Volume",
+      value: formatUsd(total("transactionVolume")),
+      description: "Total transaction volume",
+    },
+    {
+      key: "depositVolume",
+      label: "Deposit Volume",
+      value: formatUsd(total("depositVolume")),
+      description: "Aggregate deposit volume",
+    },
+    {
+      key: "utilityCount",
+      label: "Utility Count",
+      value: formatCount(total("utilityCount")),
+      description: "Airtime and Data counts",
+    },
+    {
+      key: "withdrawalCount",
+      label: "Withdraw Counts",
+      value: formatCount(total("withdrawalCount")),
+      description: "Aggregate withdrawal count",
+    },
+  ];
+};
+
+/** Static copy and sub-card selectors for each breakdown modal. */
+const breakdownDefinitions: Record<
+  CampaignMetricKey,
+  {
+    title: string;
+    isVolume: boolean;
+    countryHeading?: string;
+    countryNoun?: string;
+    cards: Array<{
+      label: string;
+      select: (row: CampaignOverviewCountry) => number;
+      caption?: string;
+      drillDown?: CampaignMetricKey;
+    }>;
+  }
+> = {
+  audience: {
+    title: "Audiences",
+    isVolume: false,
+    countryHeading: "Audiences by country",
+    countryNoun: "audiences",
+    cards: [
+      { label: "Verified Audiences", select: (row) => row.audience.verified },
+      {
+        label: "Unverified Audiences",
+        select: (row) => row.audience.unverified,
+      },
+    ],
+  },
+  transactionCount: {
+    title: "Transaction counts",
+    isVolume: false,
+    countryHeading: "Transaction count by country",
+    countryNoun: "transaction counts",
+    cards: [
+      {
+        label: "EasyPay Counts",
+        select: (row) => row.transactionCount.easyPay,
+      },
+      {
+        label: "SafeWallet Counts",
+        select: (row) => safeWalletTotal(row.transactionCount),
+        caption: "SafeWallet cash & Crypto",
+        drillDown: "safeWalletCount",
+      },
+    ],
+  },
+  transactionVolume: {
+    title: "Transaction volume",
+    isVolume: true,
+    countryHeading: "Transaction volume by country",
+    countryNoun: "transaction volume",
+    cards: [
+      {
+        label: "EasyPay volume",
+        select: (row) => row.transactionVolume.easyPay,
+      },
+      {
+        label: "SafeWallet volume",
+        select: (row) => safeWalletTotal(row.transactionVolume),
+        caption: "SafeWallet cash & Crypto",
+        drillDown: "safeWalletVolume",
+      },
+    ],
+  },
+  depositCount: {
+    title: "Deposit counts",
+    isVolume: false,
+    countryHeading: "Deposit counts by country",
+    countryNoun: "deposit counts",
+    cards: [
+      {
+        label: "SafeWallet Cash",
+        select: (row) => row.depositCount.safeWalletCash,
+      },
+      {
+        label: "SafeWallet Crypto",
+        select: (row) => row.depositCount.safeWalletCrypto,
+      },
+    ],
+  },
+  depositVolume: {
+    title: "Deposit volume",
+    isVolume: true,
+    countryHeading: "Deposit volume by country",
+    countryNoun: "deposit volume",
+    cards: [
+      {
+        label: "SafeWallet Cash",
+        select: (row) => row.depositVolume.safeWalletCash,
+      },
+      {
+        label: "SafeWallet Crypto",
+        select: (row) => row.depositVolume.safeWalletCrypto,
+      },
+    ],
+  },
+  utilityCount: {
+    title: "Utility counts",
+    isVolume: false,
+    countryHeading: "Utility counts by country",
+    countryNoun: "utility counts",
+    cards: [
+      { label: "Airtime", select: (row) => row.utilityCount.airtime },
+      { label: "Data", select: (row) => row.utilityCount.data },
+    ],
+  },
+  withdrawalCount: {
+    title: "Withdrawal counts",
+    isVolume: false,
+    countryHeading: "Withdrawal counts by country",
+    countryNoun: "withdrawal counts",
+    cards: [
+      {
+        label: "SafeWallet Cash",
+        select: (row) => row.withdrawalCount.safeWalletCash,
+      },
+      {
+        label: "SafeWallet Crypto",
+        select: (row) => row.withdrawalCount.safeWalletCrypto,
+      },
+    ],
+  },
+  safeWalletCount: {
+    title: "SafeWallet Counts",
+    isVolume: false,
+    cards: [
+      {
+        label: "SafeWallet Cash Counts",
+        select: (row) => row.transactionCount.safeWalletCash,
+      },
+      {
+        label: "SafeWallet Crypto Counts",
+        select: (row) => row.transactionCount.safeWalletCrypto,
+      },
+    ],
+  },
+  safeWalletVolume: {
+    title: "SafeWallet Volume",
+    isVolume: true,
+    cards: [
+      {
+        label: "SafeWallet Cash Volume",
+        select: (row) => row.transactionVolume.safeWalletCash,
+      },
+      {
+        label: "SafeWallet Crypto Volume",
+        select: (row) => row.transactionVolume.safeWalletCrypto,
+      },
+    ],
+  },
+};
+
+/** Builds the template-ready breakdown for one metric over the filtered country rows. */
+const getMetricBreakdown = (
+  key: CampaignMetricKey,
+  rows: CampaignOverviewCountry[],
+): CampaignMetricBreakdown => {
+  const definition = breakdownDefinitions[key];
+  /** Formats a value as currency or count depending on the metric. */
+  const format = (value: number) =>
+    definition.isVolume ? formatUsd(value) : formatCount(value);
+  const total = sumRows(rows, metricTotals[key]);
+
+  return {
+    title: definition.title,
+    total: format(total),
+    cards: definition.cards.map((card) => ({
+      label: card.label,
+      value: format(sumRows(rows, card.select)),
+      caption: card.caption,
+      drillDown: card.drillDown,
+    })),
+    countryHeading: definition.countryHeading,
+    countries: definition.countryHeading
+      ? rows.map((row) => {
+          const value = metricTotals[key](row);
+          const percent = toPercent(value, total);
+          return {
+            name: row.countryName,
+            value: format(value),
+            percent,
+            caption: `${percent}% of total ${definition.countryNoun}`,
+            totalLabel: `out of ${format(total)}`,
+          };
+        })
+      : [],
+  };
+};
+
 /** Provides typed campaign fixtures until the campaign API contract is available. */
 export const useCampaignMockData = () => ({
   campaigns,
-  campaignMetrics,
+  campaignCountryOptions,
   getCampaignById,
   getCampaignDetails,
+  getCampaignOverview,
+  getCampaignMetrics,
+  getMetricBreakdown,
 });
