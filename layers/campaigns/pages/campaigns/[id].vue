@@ -8,7 +8,7 @@ definePageMeta({
 
 const route = useRoute();
 
-/** Converts the dynamic route parameter into the campaign fixture identifier. */
+/** Converts the dynamic route parameter into the campaign identifier. */
 const campaignId = computed(() => {
   const value = route.params.id;
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");

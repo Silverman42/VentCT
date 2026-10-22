@@ -58,6 +58,14 @@ export interface IResponseMeta {
   total: number;
 }
 
+/** Pagination meta returned with paginated list responses. */
+export interface IPaginationMeta {
+  current_page: number;
+  per_page: number;
+  total: number;
+  last_page?: number;
+}
+
 export interface IResponseLinks {
   first: string;
   last: string;

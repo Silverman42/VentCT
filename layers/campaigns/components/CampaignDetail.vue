@@ -2,19 +2,30 @@
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
 import type { IAppMetric } from "~/utils/types/misc/Metric";
-import type { ITableHeaderData } from "~/utils/types/misc/TableComponent";
 import type {
-  AudienceVerificationFilter,
-  CampaignAudienceMember,
+  ITableBodyData,
+  ITableHeaderData,
+} from "~/utils/types/misc/TableComponent";
+import type {
   CampaignCountryFilter,
   CampaignMetricKey,
-  CampaignPromoter,
-  CampaignStatus,
-  PromoterAudienceFilter,
 } from "../composables/useCampaignMockData";
+import type {
+  CampaignAudienceStatusFilter,
+  ICampaign,
+} from "../composables/useCampaignStore";
+import {
+  formatCampaignDate,
+  formatCampaignDateRange,
+} from "../utils/CampaignFormatters";
 
 interface CampaignModalController {
   open: () => void | Promise<void>;
+  close: () => void;
+}
+
+interface CampaignFormModalController {
+  open: (campaign?: ICampaign) => void | Promise<void>;
   close: () => void;
 }
 
@@ -32,44 +43,85 @@ interface OverviewDateRange {
   custom?: boolean;
 }
 
-const DETAIL_TABLE_PAGE_SIZE = 10;
+/** Table-ready promoter row with formatted fallbacks. */
+interface IPromoterRow extends ITableBodyData {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  referralCode: string;
+}
+
+/** Table-ready audience row with formatted fallbacks. */
+interface IAudienceRow extends ITableBodyData {
+  id: string;
+  name: string;
+  promoter: string;
+  email: string;
+  phone: string;
+  hasTransacted: boolean;
+  isVerified: boolean;
+  joined: string;
+}
 
 const props = defineProps<{
   campaignId: string;
 }>();
 
 const {
-  campaignCountryOptions,
-  getCampaignDetails,
-  getCampaignMetrics,
-  getCampaignOverview,
-} = useCampaignMockData();
-const editCampaignModal = ref<CampaignModalController | null>(null);
+  selectedCampaign,
+  fetchCampaignDetails,
+  campaignPromoters,
+  fetchingCampaignPromoters,
+  campaignPromotersPage,
+  campaignPromotersPerPage,
+  campaignPromotersTotal,
+  fetchCampaignPromoters,
+  setCampaignPromotersSearch,
+  campaignAudiences,
+  fetchingCampaignAudiences,
+  campaignAudiencesPage,
+  campaignAudiencesPerPage,
+  campaignAudiencesTotal,
+  campaignAudiencesStatus,
+  fetchCampaignAudiences,
+  setCampaignAudiencesSearch,
+  setCampaignAudiencesStatus,
+  resetCampaignRelations,
+} = useCampaignStore();
+const { campaignCountryOptions, getCampaignSampleInsights, getCampaignMetrics, getCampaignOverview } =
+  useCampaignMockData();
+
+const campaignFormModal = ref<CampaignFormModalController | null>(null);
+const deleteModal = ref<CampaignModalController | null>(null);
 const qrCodeModal = ref<CampaignModalController | null>(null);
 const breakdownModal = ref<BreakdownModalController | null>(null);
 const actionsDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const countryDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const audienceDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const overviewCountry = ref<CampaignCountryFilter>("all");
 const overviewDateRange = ref<OverviewDateRange | null>(
   createLastThirtyDaysRange(),
 );
-const promoterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
-const audienceDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const promoterSearchInput = ref("");
 const audienceSearchInput = ref("");
-const promoterSearch = ref("");
-const audienceSearch = ref("");
-const promoterFilter = ref<PromoterAudienceFilter>("all");
-const audienceFilter = ref<AudienceVerificationFilter>("all");
-const promoterPage = ref(1);
-const audiencePage = ref(1);
+const hasLoaded = ref(false);
+const detailsFailed = ref(false);
+const promotersFailed = ref(false);
+const audiencesFailed = ref(false);
+
+const AUDIENCE_FILTERS: CampaignAudienceStatusFilter[] = [
+  "all",
+  "verified",
+  "unverified",
+  "transacted",
+];
 
 const promoterHeadings: ITableHeaderData[] = [
   { id: "name", name: "Names" },
   { id: "email", name: "Email", isHiddenOnMobile: true },
   { id: "phone", name: "Phone", isHiddenOnMobile: true },
-  { id: "referralCode", name: "Reference Code", isHiddenOnMobile: true },
-  { id: "audience", name: "Audience" },
+  { id: "referralCode", name: "Referral Code" },
 ];
 
 const audienceHeadings: ITableHeaderData[] = [
@@ -77,6 +129,7 @@ const audienceHeadings: ITableHeaderData[] = [
   { id: "promoter", name: "Promoter" },
   { id: "email", name: "Email", isHiddenOnMobile: true },
   { id: "phone", name: "Phone", isHiddenOnMobile: true },
+  { id: "joined", name: "Joined", isHiddenOnMobile: true },
   { id: "transaction", name: "Transaction" },
   { id: "status", name: "Status" },
 ];
@@ -97,39 +150,75 @@ function createLastThirtyDaysRange(): OverviewDateRange {
   };
 }
 
-/** Resolves the requested campaign data and makes missing fixtures explicit. */
-const campaignDetails = computed(() => getCampaignDetails(props.campaignId));
-
-/** Maps the campaign lifecycle status to its badge colour and label. */
-const statusPill = computed(() => {
-  const status: CampaignStatus =
-    campaignDetails.value?.campaign.status ?? "pending";
-  const pills: Record<
-    CampaignStatus,
-    { color: "green" | "orange" | "gray"; label: string }
-  > = {
-    running: { color: "green", label: "Running" },
-    pending: { color: "orange", label: "Pending" },
-    closed: { color: "gray", label: "Closed" },
+/** Header view model for the loaded campaign, with explicit fallbacks. */
+const campaignView = computed(() => {
+  const campaign = selectedCampaign.value;
+  return {
+    name: campaign?.name || "Untitled campaign",
+    slug: campaign?.slug || "—",
+    status: campaign?.status ?? "pending",
+    target: (campaign?.target ?? 0).toLocaleString(),
+    description: campaign?.description?.trim() || "",
+    dates: formatCampaignDateRange(campaign?.start_date, campaign?.end_date),
   };
-  return pills[status];
 });
 
-/** Per-country overview rows narrowed by the country and date filters. */
+/** API-backed performance cards split into two rows. */
+const apiMetricRows = computed<IAppMetric[][]>(() => {
+  const metrics = selectedCampaign.value?.metrics;
+  const format = (value: number | undefined) => (value ?? 0).toLocaleString();
+
+  return [
+    [
+      {
+        label: "Promoters",
+        value: format(metrics?.total_promoters),
+        description: "Promoters assigned to this campaign",
+      },
+      {
+        label: "Audience",
+        value: format(metrics?.total_audiences),
+        description: "People referred into this campaign",
+      },
+      {
+        label: "Events",
+        value: format(metrics?.total_events),
+        description: "Events linked to this campaign",
+      },
+    ],
+    [
+      {
+        label: "Verified Audience",
+        value: format(metrics?.verified_audiences),
+        description: "Audience members who completed KYC",
+      },
+      {
+        label: "Transacted Audience",
+        value: format(metrics?.transacted_audiences),
+        description: "Audience members who completed a trade",
+      },
+    ],
+  ];
+});
+
+/** Sample per-country overview rows narrowed by the country filter. */
 const overviewRows = computed(() =>
-  getCampaignOverview(props.campaignId, {
+  getCampaignOverview({
     country: overviewCountry.value,
     dateRange: overviewDateRange.value,
   }),
 );
 
-/** Overview cards split into the two four-card rows of the design. */
+/** Sample overview cards split into the two four-card rows of the design. */
 const overviewMetricRows = computed<IAppMetric[][]>(() => {
   const metrics: IAppMetric[] = getCampaignMetrics(overviewRows.value).map(
     (metric) => ({ ...metric, actionable: Boolean(metric.key) }),
   );
   return [metrics.slice(0, 4), metrics.slice(4)];
 });
+
+/** Sample top-promoter and performance data. */
+const sampleInsights = getCampaignSampleInsights();
 
 /** Label of the active country filter for the dropdown trigger. */
 const overviewCountryLabel = computed(
@@ -139,129 +228,131 @@ const overviewCountryLabel = computed(
     )?.label ?? "All Country",
 );
 
-/** Debounces promoter filtering until the user pauses typing. */
-const updatePromoterSearch = useDebounceFn((value: string) => {
-  promoterSearch.value = value;
-  promoterPage.value = 1;
-}, 300);
-
-/** Debounces audience filtering until the user pauses typing. */
-const updateAudienceSearch = useDebounceFn((value: string) => {
-  audienceSearch.value = value;
-  audiencePage.value = 1;
-}, 300);
-
-/** Filters promoter fixtures by search text and audience contribution state. */
-const filteredPromoters = computed<CampaignPromoter[]>(() => {
-  const details = campaignDetails.value;
-  if (!details) return [];
-
-  const searchTerm = promoterSearch.value.trim().toLocaleLowerCase();
-
-  return details.promoters.filter((promoter) => {
-    const matchesSearch =
-      !searchTerm ||
-      [promoter.name, promoter.email, promoter.phone, promoter.referralCode]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-    const matchesAudience =
-      promoterFilter.value === "all" ||
-      (promoterFilter.value === "has-audience" && promoter.audience > 0) ||
-      (promoterFilter.value === "no-audience" && promoter.audience === 0);
-
-    return matchesSearch && matchesAudience;
-  });
-});
-
-/** Filters audience fixtures by search text and their verification state. */
-const filteredAudience = computed<CampaignAudienceMember[]>(() => {
-  const details = campaignDetails.value;
-  if (!details) return [];
-
-  const searchTerm = audienceSearch.value.trim().toLocaleLowerCase();
-
-  return details.audience.filter((member) => {
-    const matchesSearch =
-      !searchTerm ||
-      [member.name, member.promoter, member.email, member.phone]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-    const matchesVerification =
-      audienceFilter.value === "all" ||
-      (audienceFilter.value === "verified" && member.isVerified) ||
-      (audienceFilter.value === "not-verified" && !member.isVerified);
-
-    return matchesSearch && matchesVerification;
-  });
-});
-
-/** Determines the final valid promoter-table page after filtering. */
-const promoterLastPage = computed(() =>
-  Math.max(
-    1,
-    Math.ceil(filteredPromoters.value.length / DETAIL_TABLE_PAGE_SIZE),
-  ),
+/** Promoter names keyed by id, used to label audience rows. */
+const promoterNames = computed(
+  () =>
+    new Map(
+      campaignPromoters.value.map((promoter) => [promoter.id, promoter.name]),
+    ),
 );
 
-/** Determines the final valid audience-table page after filtering. */
-const audienceLastPage = computed(() =>
-  Math.max(
-    1,
-    Math.ceil(filteredAudience.value.length / DETAIL_TABLE_PAGE_SIZE),
-  ),
+/** Promoter rows mapped from the API with explicit fallbacks. */
+const promoterRows = computed<IPromoterRow[]>(() =>
+  campaignPromoters.value.map((promoter) => ({
+    id: promoter.id,
+    name: promoter.name || "—",
+    email: promoter.email || "—",
+    phone: promoter.phone || "—",
+    referralCode: promoter.referral_code || "—",
+  })),
 );
 
-/** Selects promoters visible in the active paginated range. */
-const pagedPromoters = computed(() => {
-  const start = (promoterPage.value - 1) * DETAIL_TABLE_PAGE_SIZE;
-  return filteredPromoters.value.slice(start, start + DETAIL_TABLE_PAGE_SIZE);
-});
+/** Audience rows mapped from the API with explicit fallbacks. */
+const audienceRows = computed<IAudienceRow[]>(() =>
+  campaignAudiences.value.map((member) => ({
+    id: member.id,
+    name: member.name || "—",
+    promoter:
+      (member.promoter_id && promoterNames.value.get(member.promoter_id)) ||
+      "—",
+    email: member.email || "—",
+    phone: member.phone || "—",
+    hasTransacted: Boolean(member.has_transacted),
+    isVerified: Boolean(member.is_verified),
+    joined: formatCampaignDate(member.created_at),
+  })),
+);
 
-/** Selects audience members visible in the active paginated range. */
-const pagedAudience = computed(() => {
-  const start = (audiencePage.value - 1) * DETAIL_TABLE_PAGE_SIZE;
-  return filteredAudience.value.slice(start, start + DETAIL_TABLE_PAGE_SIZE);
-});
+/** Renders a concise text label for an audience status filter value. */
+const getAudienceFilterLabel = (filter: CampaignAudienceStatusFilter): string =>
+  `${filter.slice(0, 1).toUpperCase()}${filter.slice(1)}`;
 
-/** Changes the promoter audience filter and closes the corresponding menu. */
-const selectPromoterFilter = (filter: PromoterAudienceFilter) => {
-  promoterFilter.value = filter;
-  promoterPage.value = 1;
-  promoterDropdown.value?.closeDropdown();
+/** Runs a related-table request and records whether it failed. */
+const runRelationRequest = async (
+  failed: Ref<boolean>,
+  request: () => Promise<unknown>,
+): Promise<void> => {
+  failed.value = false;
+  try {
+    await request();
+  } catch {
+    failed.value = true;
+  }
 };
 
-/** Changes the audience verification filter and closes the corresponding menu. */
-const selectAudienceFilter = (filter: AudienceVerificationFilter) => {
-  audienceFilter.value = filter;
-  audiencePage.value = 1;
+/** Loads the campaign's promoters table. */
+const loadPromoters = (page?: number): Promise<void> =>
+  runRelationRequest(promotersFailed, () =>
+    fetchCampaignPromoters(props.campaignId, page),
+  );
+
+/** Loads the campaign's audience table. */
+const loadAudiences = (page?: number): Promise<void> =>
+  runRelationRequest(audiencesFailed, () =>
+    fetchCampaignAudiences(props.campaignId, page),
+  );
+
+/** Loads the campaign, then its promoters and audience when it exists. */
+const loadCampaign = async (): Promise<void> => {
+  hasLoaded.value = false;
+  detailsFailed.value = false;
+  promoterSearchInput.value = "";
+  audienceSearchInput.value = "";
+  resetCampaignRelations();
+
+  try {
+    await fetchCampaignDetails(props.campaignId);
+  } catch {
+    detailsFailed.value = true;
+  } finally {
+    hasLoaded.value = true;
+  }
+
+  if (selectedCampaign.value) {
+    await Promise.all([loadPromoters(1), loadAudiences(1)]);
+  }
+};
+
+/** Searches promoters once the user pauses typing. */
+const updatePromoterSearch = useDebounceFn((term: string) => {
+  void runRelationRequest(promotersFailed, () =>
+    setCampaignPromotersSearch(props.campaignId, term),
+  );
+}, 300);
+
+/** Searches audience members once the user pauses typing. */
+const updateAudienceSearch = useDebounceFn((term: string) => {
+  void runRelationRequest(audiencesFailed, () =>
+    setCampaignAudiencesSearch(props.campaignId, term),
+  );
+}, 300);
+
+/** Changes the audience status filter and closes its menu. */
+const selectAudienceFilter = (filter: CampaignAudienceStatusFilter) => {
   audienceDropdown.value?.closeDropdown();
+  void runRelationRequest(audiencesFailed, () =>
+    setCampaignAudiencesStatus(props.campaignId, filter),
+  );
 };
 
-/** Renders a concise text label for a promoter audience filter value. */
-const getPromoterFilterLabel = (filter: PromoterAudienceFilter): string => {
-  if (filter === "has-audience") return "Has audience";
-  if (filter === "no-audience") return "No audience";
-  return "All";
-};
-
-/** Renders a concise text label for an audience verification filter value. */
-const getAudienceFilterLabel = (filter: AudienceVerificationFilter): string => {
-  if (filter === "not-verified") return "Not verified";
-  return `${filter.slice(0, 1).toUpperCase()}${filter.slice(1)}`;
-};
-
-/** Opens the validation-only campaign edit form for the current campaign. */
+/** Opens the edit form prefilled with the loaded campaign. */
 const openEditCampaignModal = (): void => {
   actionsDropdown.value?.closeDropdown();
-  editCampaignModal.value?.open();
+  if (selectedCampaign.value) {
+    void campaignFormModal.value?.open(selectedCampaign.value);
+  }
 };
 
 /** Opens the QR pass for the current campaign. */
 const openQrCodeModal = (): void => {
   actionsDropdown.value?.closeDropdown();
-  qrCodeModal.value?.open();
+  void qrCodeModal.value?.open();
+};
+
+/** Opens the delete confirmation for the current campaign. */
+const openDeleteModal = (): void => {
+  actionsDropdown.value?.closeDropdown();
+  void deleteModal.value?.open();
 };
 
 /** Applies the overview country filter and closes its menu. */
@@ -276,51 +367,72 @@ const openMetricBreakdown = (metric: IAppMetric): void => {
   breakdownModal.value?.open(metric.key as CampaignMetricKey);
 };
 
-watch(promoterSearchInput, (value) => updatePromoterSearch(value));
-watch(audienceSearchInput, (value) => updateAudienceSearch(value));
-
-watch(promoterFilter, () => {
-  promoterPage.value = 1;
+watch(promoterSearchInput, (term, previous) => {
+  if (term.trim() !== previous.trim()) updatePromoterSearch(term);
 });
-
-watch(audienceFilter, () => {
-  audiencePage.value = 1;
+watch(audienceSearchInput, (term, previous) => {
+  if (term.trim() !== previous.trim()) updateAudienceSearch(term);
 });
-
-watch(
-  promoterLastPage,
-  (lastPage) => {
-    if (promoterPage.value > lastPage) promoterPage.value = lastPage;
-  },
-  { immediate: true },
-);
-
-watch(
-  audienceLastPage,
-  (lastPage) => {
-    if (audiencePage.value > lastPage) audiencePage.value = lastPage;
-  },
-  { immediate: true },
-);
+watch(() => props.campaignId, loadCampaign, { immediate: true });
 </script>
 
 <template>
-  <div v-if="campaignDetails" class="flex w-full flex-col gap-6">
+  <CampaignDetailShimmer v-if="!hasLoaded" />
+
+  <section
+    v-else-if="detailsFailed"
+    class="flex min-h-[24rem] flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-6 text-center"
+  >
+    <h1 class="text-xl font-medium text-dashboard-heading">
+      We couldn't load this campaign
+    </h1>
+    <p class="mt-2 max-w-md text-sm text-dashboard-text">
+      Something went wrong while fetching the campaign details. Please try
+      again.
+    </p>
+    <AppButton type="button" size="md" class="mt-5" @click="loadCampaign">
+      Retry
+    </AppButton>
+  </section>
+
+  <section
+    v-else-if="!selectedCampaign"
+    class="flex min-h-[24rem] flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-6 text-center"
+  >
+    <Icon name="vent:box-search" size="2.5rem" class="text-dashboard-text" />
+    <h1 class="mt-4 text-xl font-medium text-dashboard-heading">
+      Campaign not found
+    </h1>
+    <p class="mt-2 max-w-md text-sm text-dashboard-text">
+      This campaign does not exist or may have been deleted.
+    </p>
+    <NuxtLink
+      to="/campaigns"
+      class="mt-5 rounded-lg bg-brand-color-default px-4 py-2.5 text-sm text-white transition hover:bg-brand-color-005"
+    >
+      Return to campaigns
+    </NuxtLink>
+  </section>
+
+  <div v-else class="flex w-full flex-col gap-6">
     <section class="flex items-start justify-between gap-4">
       <div>
         <h2
           class="text-lg md:text-2xl font-medium tracking-tight text-dashboard-heading"
         >
-          {{ campaignDetails.campaign.name }}
+          {{ campaignView.name }}
         </h2>
         <p class="mt-1 text-xs text-dashboard-text">
-          Target - {{ campaignDetails.campaign.target.toLocaleString() }} &nbsp;
-          Referral code -
-          {{ campaignDetails.campaign.referralCode }}
+          Target - {{ campaignView.target }} &nbsp; Slug -
+          {{ campaignView.slug }} &nbsp; {{ campaignView.dates }}
         </p>
-        <AppPills class="mt-2 text-xs" :color="statusPill.color">
-          {{ statusPill.label }}
-        </AppPills>
+        <p
+          v-if="campaignView.description"
+          class="mt-1 max-w-2xl text-sm text-dashboard-text"
+        >
+          {{ campaignView.description }}
+        </p>
+        <CampaignStatusPill class="mt-2 text-xs" :status="campaignView.status" />
       </div>
 
       <AppDropdown
@@ -357,9 +469,8 @@ watch(
             </button>
             <button
               type="button"
-              class="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-400 opacity-60"
-              disabled
-              title="Not available in mock mode"
+              class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-600 transition hover:bg-dashboard-bg-dark dark:text-red-400"
+              @click="openDeleteModal"
             >
               <Icon name="vent:trash" size="1rem" />
               Delete campaign
@@ -369,130 +480,127 @@ watch(
       </AppDropdown>
     </section>
 
+    <AppMetricRows :rows="apiMetricRows" aria-label="Campaign performance metrics" />
+
     <section
-      class="flex flex-wrap items-center justify-end gap-2 border-b border-dashboard-card-border pb-5"
+      class="flex flex-wrap items-center justify-between gap-2 border-b border-dashboard-card-border pb-5"
       aria-label="Campaign overview filters"
     >
-      <AppDateTimeDropdown
-        v-model="overviewDateRange"
-        button-class="!rounded-lg !px-3 !py-2 !font-normal"
-      />
-      <AppDropdown
-        ref="countryDropdown"
-        position="right"
-        :width-is-finite="false"
-      >
-        <template #default>
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg-darker px-3 py-3 text-sm text-dashboard-heading transition hover:border-brand-color-default"
-          >
-            <Icon name="vent:global" size="1rem" />
-            {{ overviewCountryLabel }}
-            <Icon name="vent:arrow-down" size="0.9rem" />
-          </button>
-        </template>
-        <template #dropdown_body>
-          <div class="min-w-38 space-y-1">
+      <p class="text-xs text-dashboard-text">
+        Overview, breakdown, top promoters and chart show sample data.
+      </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <AppDateTimeDropdown
+          v-model="overviewDateRange"
+          button-class="!rounded-lg !px-3 !py-2 !font-normal"
+        />
+        <AppDropdown
+          ref="countryDropdown"
+          position="right"
+          :width-is-finite="false"
+        >
+          <template #default>
             <button
-              v-for="option in campaignCountryOptions"
-              :key="option.value"
               type="button"
-              class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-              :class="{
-                'bg-dashboard-bg-dark': overviewCountry === option.value,
-              }"
-              @click="selectOverviewCountry(option.value)"
+              class="inline-flex items-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg-darker px-3 py-3 text-sm text-dashboard-heading transition hover:border-brand-color-default"
             >
-              {{ option.label }}
+              <Icon name="vent:global" size="1rem" />
+              {{ overviewCountryLabel }}
+              <Icon name="vent:arrow-down" size="0.9rem" />
             </button>
-          </div>
-        </template>
-      </AppDropdown>
+          </template>
+          <template #dropdown_body>
+            <div class="min-w-38 space-y-1">
+              <button
+                v-for="option in campaignCountryOptions"
+                :key="option.value"
+                type="button"
+                class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                :class="{
+                  'bg-dashboard-bg-dark': overviewCountry === option.value,
+                }"
+                @click="selectOverviewCountry(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </template>
+        </AppDropdown>
+      </div>
     </section>
 
     <AppMetricRows
       :rows="overviewMetricRows"
-      aria-label="Campaign summary metrics"
+      aria-label="Campaign overview metrics"
       @select="openMetricBreakdown"
     />
 
     <section class="grid grid-cols-1 gap-4 xl:grid-cols-12">
+      <section
+        v-if="promotersFailed"
+        class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center xl:col-span-7"
+      >
+        <h3 class="text-lg font-medium text-dashboard-heading">
+          We couldn't load promoters
+        </h3>
+        <AppButton type="button" size="md" class="mt-5" @click="loadPromoters()">
+          Retry
+        </AppButton>
+      </section>
+
       <TableComponent
+        v-else
         class="xl:col-span-7"
         :headings="promoterHeadings"
-        :body="pagedPromoters"
+        :body="promoterRows"
+        :is-loading="fetchingCampaignPromoters"
         empty-heading="No promoters found"
-        empty-subtitle="Try changing the promoter search or audience filter."
+        empty-subtitle="No promoters match this campaign and search."
       >
         <template #table-heading>
           <TableComponentHeader
             v-model:search="promoterSearchInput"
             table-name="Promoters"
             search-placeholder="Search promoters..."
-          >
-            <template #filters>
-              <AppDropdown
-                ref="promoterDropdown"
-                position="right"
-                :width-is-finite="false"
-              >
-                <template #default>
-                  <button
-                    type="button"
-                    class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
-                  >
-                    <Icon name="vent:filter" size="0.9rem" />
-                    Filters
-                  </button>
-                </template>
-                <template #dropdown_body>
-                  <div class="min-w-38 space-y-1">
-                    <button
-                      v-for="filter in [
-                        'all',
-                        'has-audience',
-                        'no-audience',
-                      ] as const"
-                      :key="filter"
-                      type="button"
-                      class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                      :class="{
-                        'bg-dashboard-bg-dark': promoterFilter === filter,
-                      }"
-                      @click="selectPromoterFilter(filter)"
-                    >
-                      {{ getPromoterFilterLabel(filter) }}
-                    </button>
-                  </div>
-                </template>
-              </AppDropdown>
-            </template>
-          </TableComponentHeader>
+          />
         </template>
 
         <template #table-footer>
           <TableComponentPagination
-            :page="promoterPage"
-            :per-page="DETAIL_TABLE_PAGE_SIZE"
-            :total-items="filteredPromoters.length"
-            @change-page="promoterPage = $event"
+            :page="campaignPromotersPage"
+            :per-page="campaignPromotersPerPage"
+            :total-items="campaignPromotersTotal"
+            @change-page="loadPromoters"
           />
         </template>
       </TableComponent>
 
       <CampaignTopPromoters
         class="xl:col-span-5"
-        :total-volume="campaignDetails.totalVolume"
-        :promoters="campaignDetails.topPromoters"
+        :total-volume="sampleInsights.totalVolume"
+        :promoters="sampleInsights.topPromoters"
       />
     </section>
 
+    <section
+      v-if="audiencesFailed"
+      class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
+    >
+      <h3 class="text-lg font-medium text-dashboard-heading">
+        We couldn't load the audience
+      </h3>
+      <AppButton type="button" size="md" class="mt-5" @click="loadAudiences()">
+        Retry
+      </AppButton>
+    </section>
+
     <TableComponent
+      v-else
       :headings="audienceHeadings"
-      :body="pagedAudience"
+      :body="audienceRows"
+      :is-loading="fetchingCampaignAudiences"
       empty-heading="No audience members found"
-      empty-subtitle="Try changing the audience search or verification filter."
+      empty-subtitle="Try changing the audience search or status filter."
     >
       <template #table-heading>
         <TableComponentHeader
@@ -511,23 +619,20 @@ watch(
                   type="button"
                   class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
                 >
-                  Filter by: {{ getAudienceFilterLabel(audienceFilter) }}
+                  Filter by:
+                  {{ getAudienceFilterLabel(campaignAudiencesStatus) }}
                   <Icon name="vent:arrow-down" size="0.9rem" />
                 </button>
               </template>
               <template #dropdown_body>
                 <div class="min-w-38 space-y-1">
                   <button
-                    v-for="filter in [
-                      'all',
-                      'verified',
-                      'not-verified',
-                    ] as const"
+                    v-for="filter in AUDIENCE_FILTERS"
                     :key="filter"
                     type="button"
                     class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
                     :class="{
-                      'bg-dashboard-bg-dark': audienceFilter === filter,
+                      'bg-dashboard-bg-dark': campaignAudiencesStatus === filter,
                     }"
                     @click="selectAudienceFilter(filter)"
                   >
@@ -542,10 +647,10 @@ watch(
 
       <template #col_transaction="{ rowData }">
         <AppPills
-          :color="rowData.hasTransaction ? 'green' : 'red'"
+          :color="rowData.hasTransacted ? 'green' : 'red'"
           class="text-xs"
         >
-          {{ rowData.hasTransaction ? "Yes" : "No" }}
+          {{ rowData.hasTransacted ? "Yes" : "No" }}
         </AppPills>
       </template>
 
@@ -557,43 +662,23 @@ watch(
 
       <template #table-footer>
         <TableComponentPagination
-          :page="audiencePage"
-          :per-page="DETAIL_TABLE_PAGE_SIZE"
-          :total-items="filteredAudience.length"
-          @change-page="audiencePage = $event"
+          :page="campaignAudiencesPage"
+          :per-page="campaignAudiencesPerPage"
+          :total-items="campaignAudiencesTotal"
+          @change-page="loadAudiences"
         />
       </template>
     </TableComponent>
 
-    <CampaignPerformanceChart :performance="campaignDetails.performance" />
+    <CampaignPerformanceChart :performance="sampleInsights.performance" />
 
-    <CampaignEditModal
-      ref="editCampaignModal"
-      :campaign="campaignDetails.campaign"
+    <CampaignNewModal ref="campaignFormModal" />
+    <CampaignDeleteModal
+      ref="deleteModal"
+      :campaign-ids="[selectedCampaign.id]"
+      redirect-on-delete
     />
-    <CampaignQrCodeModal
-      ref="qrCodeModal"
-      :campaign="campaignDetails.campaign"
-    />
+    <CampaignQrCodeModal ref="qrCodeModal" :campaign="selectedCampaign" />
     <CampaignMetricBreakdownModal ref="breakdownModal" :rows="overviewRows" />
   </div>
-
-  <section
-    v-else
-    class="flex min-h-[24rem] flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-6 text-center"
-  >
-    <Icon name="vent:box-search" size="2.5rem" class="text-dashboard-text" />
-    <h1 class="mt-4 text-xl font-medium text-dashboard-heading">
-      Campaign not found
-    </h1>
-    <p class="mt-2 max-w-md text-sm text-dashboard-text">
-      This campaign does not exist in the current fixture data.
-    </p>
-    <NuxtLink
-      to="/campaigns"
-      class="mt-5 rounded-lg bg-brand-color-default px-4 py-2.5 text-sm text-white transition hover:bg-brand-color-005"
-    >
-      Return to campaigns
-    </NuxtLink>
-  </section>
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { QrcodeCanvas } from "qrcode.vue";
-import type { Campaign } from "../composables/useCampaignMockData";
+import type { ICampaign } from "../composables/useCampaignStore";
+import { formatCampaignDateRange } from "../utils/CampaignFormatters";
 
 interface ModalController {
   showDialogBox: () => void;
@@ -8,24 +9,32 @@ interface ModalController {
 }
 
 const props = defineProps<{
-  campaign: Campaign;
+  campaign: ICampaign;
 }>();
 
 const modal = ref<ModalController | null>(null);
 const qrCodeContainer = ref<HTMLElement | null>(null);
 const { triggerToast } = useToastHandler();
 
-/** Encodes a fixture-safe registration link that belongs to the selected campaign. */
+/** Route-safe campaign identifier, preferring the API slug. */
+const campaignSlug = computed(() => props.campaign.slug || props.campaign.id);
+
+/** Registration link encoded in the QR code for the selected campaign. */
 const registrationUrl = computed(
   () =>
-    `https://app.vent.africa/register/${props.campaign.id}?ref=${encodeURIComponent(props.campaign.referralCode)}`,
+    `https://app.vent.africa/register/${encodeURIComponent(campaignSlug.value)}`,
+);
+
+/** Campaign start–end dates shown on the pass. */
+const campaignDates = computed(() =>
+  formatCampaignDateRange(props.campaign.start_date, props.campaign.end_date),
 );
 
 /** Returns the rendered QR canvas when it is available in the open modal. */
 const getQrCanvas = (): HTMLCanvasElement | null =>
   qrCodeContainer.value?.querySelector("canvas") ?? null;
 
-/** Escapes campaign fixture strings before rendering them inside the print document. */
+/** Escapes campaign strings before rendering them inside the print document. */
 const escapeHtml = (value: string): string =>
   value.replace(
     /[&<>'"]/g,
@@ -64,7 +73,7 @@ const downloadQrCode = (): void => {
 
   const downloadLink = document.createElement("a");
   downloadLink.href = canvas.toDataURL("image/png");
-  downloadLink.download = `campaign-${props.campaign.id}-qr-code.png`;
+  downloadLink.download = `campaign-${campaignSlug.value}-qr-code.png`;
   document.body.appendChild(downloadLink);
   downloadLink.click();
   downloadLink.remove();
@@ -96,14 +105,14 @@ const printQrCode = (): void => {
 
   const qrDataUrl = canvas.toDataURL("image/png");
   const campaignName = escapeHtml(props.campaign.name);
-  const eventDate = escapeHtml(props.campaign.eventDate);
-  const location = escapeHtml(props.campaign.location);
+  const dates = escapeHtml(campaignDates.value);
+  const link = escapeHtml(registrationUrl.value);
   const logoUrl = `${window.location.origin}/img/logo_primary.svg`;
 
   printWindow.document.write(`<!doctype html>
     <html><head><title>${campaignName} QR code</title>
     <style>body{font-family:Arial,sans-serif;color:#13334e;margin:0;padding:32px;text-align:center}img.logo{width:92px;display:block;margin:0 auto 32px}h1{font-size:22px;margin:8px 0}p{color:#4c6172;margin:8px 0}.qr{width:300px;height:300px;margin:28px auto;display:block}.hint{font-size:14px;max-width:300px;margin:0 auto}@media print{body{padding:16px}}</style>
-    </head><body><img class="logo" src="${logoUrl}" alt="Vent"><p>You are checking in to</p><h1>${campaignName}</h1><p>${eventDate}</p><p>${location}</p><img class="qr" src="${qrDataUrl}" alt="QR code for ${campaignName}"><p class="hint">Scan the code with your phone camera and follow the process to register.</p></body></html>`);
+    </head><body><img class="logo" src="${logoUrl}" alt="Vent"><p>You are checking in to</p><h1>${campaignName}</h1><p>${dates}</p><p>${link}</p><img class="qr" src="${qrDataUrl}" alt="QR code for ${campaignName}"><p class="hint">Scan the code with your phone camera and follow the process to register.</p></body></html>`);
   printWindow.document.close();
   printWindow.onload = () => {
     printWindow.focus();
@@ -130,13 +139,13 @@ defineExpose({ open, close });
           class="mt-2 flex items-center justify-center gap-1 text-xs text-dashboard-text"
         >
           <Icon name="vent:calendar" size="0.85rem" />
-          {{ campaign.eventDate }}
+          {{ campaignDates }}
         </p>
         <p
-          class="mt-1 flex items-center justify-center gap-1 text-xs text-dashboard-text"
+          class="mt-1 flex items-center justify-center gap-1 break-all text-xs text-dashboard-text"
         >
-          <Icon name="vent:location" size="0.85rem" />
-          {{ campaign.location }}
+          <Icon name="vent:link" size="0.85rem" class="shrink-0" />
+          {{ registrationUrl }}
         </p>
       </div>
 
