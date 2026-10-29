@@ -1,6 +1,10 @@
 import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
 import { downloadResponseFile } from "~/utils/helpers/FileDownload";
-import type { IResponse } from "~/utils/types/misc/ResponseBody";
+import { resolveLastPage } from "~/utils/helpers/Pagination";
+import type {
+  IPaginationMeta,
+  IResponse,
+} from "~/utils/types/misc/ResponseBody";
 import type { ITableBodyData } from "~/utils/types/misc/TableComponent";
 
 /** Lifecycle status of an event. */
@@ -117,13 +121,8 @@ export interface IEventQrCode {
   qr_code_svg: string;
 }
 
-/** Pagination meta returned with list responses. */
-export interface IPaginationMeta {
-  current_page: number;
-  per_page: number;
-  total: number;
-  last_page?: number;
-}
+/** Pagination meta returned with list responses (re-exported for existing imports). */
+export type { IPaginationMeta };
 
 /** Payload for creating a new event. */
 export interface ICreateEventPayload {
@@ -320,13 +319,6 @@ export const useEventStore = () => {
         state.selectedEvent.value?.metrics?.total_attendees ??
         0,
     ),
-  };
-
-  /** Derives the last page from list meta, falling back to total / per_page. */
-  const resolveLastPage = (meta: IPaginationMeta | undefined): number => {
-    if (!meta) return 1;
-    if (meta.last_page) return Math.max(1, meta.last_page);
-    return Math.max(1, Math.ceil((meta.total ?? 0) / (meta.per_page || 1)));
   };
 
   const actions = {
