@@ -189,7 +189,7 @@ onMounted(() => {
           <TelemetryHealthGridShimmer
             v-if="fetchingSystemHealth && !systemHealth"
           />
-          <TelemetryErrorState
+          <AppErrorState
             v-else-if="healthFailed && !systemHealth"
             heading="We couldn't load system health"
             description="The diagnostics endpoint did not respond. Check your connection and try again."
@@ -210,7 +210,7 @@ onMounted(() => {
       <template #liveness>
         <div>
           <TelemetryLivenessGridShimmer v-if="fetchingLiveness && !liveness" />
-          <TelemetryErrorState
+          <AppErrorState
             v-else-if="livenessFailed && !liveness"
             heading="We couldn't reach the liveness probe"
             description="The health endpoint did not respond. Check your connection and try again."

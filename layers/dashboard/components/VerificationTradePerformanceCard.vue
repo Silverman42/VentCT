@@ -10,7 +10,15 @@ import {
 } from "chart.js";
 import type { ChartData, ChartOptions } from "chart.js";
 import { Line } from "vue-chartjs";
-import type { DashboardPeriod } from "../composables/useDashboardMockData";
+import type {
+  DashboardSeriesPeriod,
+  IVerificationTradeSeries,
+} from "../composables/useDashboardStore";
+import {
+  dashboardPeriodOptions,
+  formatBucketLabel,
+  getNiceAxisMax,
+} from "../utils/DashboardFormatters";
 
 ChartJS.register(
   CategoryScale,
@@ -21,18 +29,51 @@ ChartJS.register(
   Tooltip,
 );
 
-const { periodOptions, verificationSeries } = useDashboardMockData();
-const { chartTheme } = useDashboardChartTheme();
-const selectedPeriod = ref<DashboardPeriod>("1W");
+const props = withDefaults(
+  defineProps<{
+    data: IVerificationTradeSeries | null;
+    /** Dims the chart while a refresh is in flight. */
+    loading?: boolean;
+    /** Shows the error state instead of the chart. */
+    failed?: boolean;
+  }>(),
+  {
+    loading: false,
+    failed: false,
+  },
+);
 
-const activeSeries = computed(() => verificationSeries[selectedPeriod.value]);
+const emit = defineEmits<{
+  /** Fired when the user asks to repeat the failed request. */
+  retry: [];
+}>();
+
+const period = defineModel<DashboardSeriesPeriod>("period", { required: true });
+
+const { chartTheme } = useDashboardChartTheme();
+
+/** Chart-ready labels and datasets derived from the API series. */
+const view = computed(() => {
+  const unit = props.data?.unit ?? "day";
+  const points = props.data?.series ?? [];
+  const verified = points.map((point) => point.verifiedUsers ?? 0);
+  const traded = points.map((point) => point.tradedUsers ?? 0);
+
+  return {
+    labels: points.map((point) => formatBucketLabel(point.bucket, unit)),
+    verified,
+    traded,
+    maximum: getNiceAxisMax([...verified, ...traded]),
+    isEmpty: [...verified, ...traded].every((value) => value === 0),
+  };
+});
 
 const chartData = computed<ChartData<"line">>(() => ({
-  labels: activeSeries.value.labels,
+  labels: view.value.labels,
   datasets: [
     {
-      label: "Verify Users",
-      data: activeSeries.value.verifiedUsers,
+      label: "Verified users",
+      data: view.value.verified,
       borderColor: chartTheme.value.verified,
       backgroundColor: chartTheme.value.verified,
       borderWidth: 2.5,
@@ -43,7 +84,7 @@ const chartData = computed<ChartData<"line">>(() => ({
     },
     {
       label: "Users that traded",
-      data: activeSeries.value.usersThatTraded,
+      data: view.value.traded,
       borderColor: chartTheme.value.traded,
       backgroundColor: chartTheme.value.traded,
       borderWidth: 2,
@@ -76,17 +117,24 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
     x: {
       border: { display: false },
       grid: { display: false },
-      ticks: { color: chartTheme.value.mutedText, font: { size: 12 } },
-    },
-    y: {
-      beginAtZero: true,
-      max: activeSeries.value.maximum,
-      border: { display: false },
-      grid: { color: chartTheme.value.grid, borderDash: [4, 4] },
       ticks: {
         color: chartTheme.value.mutedText,
         font: { size: 12 },
-        stepSize: activeSeries.value.maximum / 4,
+        autoSkip: true,
+        maxTicksLimit: 8,
+        maxRotation: 0,
+      },
+    },
+    y: {
+      beginAtZero: true,
+      max: view.value.maximum,
+      border: { display: false },
+      grid: { color: chartTheme.value.grid },
+      ticks: {
+        color: chartTheme.value.mutedText,
+        font: { size: 12 },
+        stepSize: view.value.maximum / 4,
+        precision: 0,
       },
     },
   },
@@ -96,6 +144,7 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
 <template>
   <section
     class="flex min-h-[455px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-6"
+    :aria-busy="props.loading"
     aria-labelledby="verification-performance-title"
   >
     <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -110,32 +159,56 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
           Verified users and trade performance stats
         </p>
       </div>
-      <AppPeriodSelector v-model="selectedPeriod" :options="periodOptions" />
+      <AppPeriodSelector v-model="period" :options="dashboardPeriodOptions" />
     </header>
 
-    <div class="mt-8 min-h-[275px] flex-1" aria-label="Verification and trade performance chart">
-      <ClientOnly>
-        <Line
-          :data="chartData"
-          :options="chartOptions"
-          aria-label="Line chart comparing verified users with users that traded"
-          role="img"
-        />
-        <template #fallback>
-          <div class="h-[275px]" aria-hidden="true" />
-        </template>
-      </ClientOnly>
-    </div>
+    <AppErrorState
+      v-if="props.failed"
+      class="mt-8 flex-1 !border-0"
+      compact
+      heading="We couldn't load this chart"
+      description="Check your connection and try again."
+      :retrying="props.loading"
+      @retry="emit('retry')"
+    />
 
-    <div class="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-dashboard-heading">
-      <span class="inline-flex items-center gap-2">
-        <i class="h-2 w-2 rounded-full bg-dashboard-chart-verified" aria-hidden="true" />
-        Verify Users
-      </span>
-      <span class="inline-flex items-center gap-2">
-        <i class="h-2 w-2 rounded-full bg-dashboard-chart-traded" aria-hidden="true" />
-        Users that traded
-      </span>
-    </div>
+    <AppEmptyState
+      v-else-if="view.isEmpty && !props.loading"
+      heading="No verifications or trades"
+      empty-table-subtitle="Nothing was recorded in this period. Try a longer window."
+      height="275px"
+      hide-image
+    />
+
+    <template v-else>
+      <div
+        class="mt-8 min-h-[275px] flex-1 transition-opacity"
+        :class="{ 'opacity-50': props.loading }"
+        aria-label="Verification and trade performance chart"
+      >
+        <ClientOnly>
+          <Line
+            :data="chartData"
+            :options="chartOptions"
+            aria-label="Line chart comparing verified users with users that traded"
+            role="img"
+          />
+          <template #fallback>
+            <div class="h-[275px]" aria-hidden="true" />
+          </template>
+        </ClientOnly>
+      </div>
+
+      <div class="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-dashboard-heading">
+        <span class="inline-flex items-center gap-2">
+          <i class="h-2 w-2 rounded-full bg-dashboard-chart-verified" aria-hidden="true" />
+          Verified users
+        </span>
+        <span class="inline-flex items-center gap-2">
+          <i class="h-2 w-2 rounded-full bg-dashboard-chart-traded" aria-hidden="true" />
+          Users that traded
+        </span>
+      </div>
+    </template>
   </section>
 </template>

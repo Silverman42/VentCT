@@ -1,12 +1,18 @@
 <script setup lang="ts">
 const props = withDefaults(
   defineProps<{
+    /** Short statement of what failed. */
     heading: string;
+    /** Guidance on what the user can do next. */
     description: string;
+    /** Shows the retry button's loading state while the request repeats. */
     retrying?: boolean;
+    /** Tightens vertical padding when the state sits inside a card. */
+    compact?: boolean;
   }>(),
   {
     retrying: false,
+    compact: false,
   },
 );
 
@@ -18,7 +24,8 @@ const emit = defineEmits<{
 
 <template>
   <section
-    class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
+    class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 text-center"
+    :class="props.compact ? 'py-10' : 'py-16'"
   >
     <Icon
       name="vent:warning"

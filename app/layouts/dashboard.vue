@@ -20,7 +20,7 @@ onMounted(authenticate);
     <div class="flex w-full font-body">
       <Sidebar />
 
-      <div class="min-h-screen grow bg-dashboard-bg">
+      <div class="min-h-screen min-w-0 grow bg-dashboard-bg">
         <UtilityBar />
 
         <main class="p-5 pb-20 md:p-8 md:pb-20">

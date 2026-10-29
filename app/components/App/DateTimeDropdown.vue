@@ -28,8 +28,11 @@ const props = withDefaults(
     buttonClass?: string;
     placeholder?: string;
     dropdownWidth?: string;
+    /** Shows the selected preset's name (e.g. "All time") instead of its dates; custom ranges still show dates. */
+    showPresetLabel?: boolean;
   }>(),
   {
+    showPresetLabel: false,
     buttonClass: "",
     placeholder: "Select date range",
     dropdownWidth: "w-[20rem]",
@@ -211,6 +214,9 @@ const buttonClasses = computed(() => {
 
 const buttonLabel = computed(() => {
   if (!selectedRange.value) return props.placeholder;
+  if (props.showPresetLabel && !selectedRange.value.custom) {
+    return selectedRange.value.label || props.placeholder;
+  }
   const startLabel = formatDateForButton(selectedRange.value.start);
   const endLabel = formatDateForButton(
     selectedRange.value.end,
