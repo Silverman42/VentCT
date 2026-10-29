@@ -61,6 +61,12 @@ export const sidebarLinks: SidebarLink[][] = [
       route: "/admins",
     },
     {
+      type: "link",
+      name: "Access Control",
+      icon: "vent:security-user",
+      route: "/access-control",
+    },
+    {
       type: "heading",
       name: "TOOLS & MONITOR",
     },
@@ -72,15 +78,15 @@ export const sidebarLinks: SidebarLink[][] = [
     },
     {
       type: "link",
-      name: "Telescope",
+      name: "Telemetry",
       icon: "vent:video",
-      route: "/",
+      route: "/telemetry",
     },
     {
       type: "link",
-      name: "logs",
+      name: "Logs",
       icon: "vent:timer-2",
-      route: "/",
+      route: "/logs",
     },
   ],
 ];

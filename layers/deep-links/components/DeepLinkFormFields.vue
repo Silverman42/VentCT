@@ -1,342 +1,267 @@
 <script setup lang="ts">
 import type { AppDropdown } from "#components";
 import {
-  deepLinkRouteOptions,
-  type DeepLinkDraft,
+  DEEP_LINK_STATUS_LABELS,
+  DEEP_LINK_TYPE_LABELS,
+  type DeepLinkStatus,
   type DeepLinkType,
 } from "../composables/useDeepLinkStore";
-
-/** Identifies the form fields that can surface Vuelidate feedback. */
-export type DeepLinkFormField =
-  | "type"
-  | "internalName"
-  | "referralCode"
-  | "route"
-  | "routeParameter"
-  | "url"
-  | "browserMode"
-  | "previewTitle"
-  | "previewDescription"
-  | "previewImageUrl";
-
-/** Maps editable form fields to their current validation error text. */
-export type DeepLinkFormErrors = Partial<Record<DeepLinkFormField, string>>;
+import type {
+  DeepLinkForm,
+  DeepLinkFormErrors,
+  DeepLinkFormField,
+} from "../composables/useDeepLinkForm";
 
 const props = withDefaults(
   defineProps<{
     errors?: DeepLinkFormErrors;
-    includeDestination?: boolean;
-    includePreview?: boolean;
+    showStatus?: boolean;
   }>(),
   {
     errors: () => ({}),
-    includeDestination: true,
-    includePreview: false,
+    showStatus: true,
   },
 );
 
-const draft = defineModel<DeepLinkDraft>("form", { required: true });
+const form = defineModel<DeepLinkForm>("form", { required: true });
 
 const emit = defineEmits<{
   touch: [field: DeepLinkFormField];
-  imageFileSelected: [file: File | null];
 }>();
 
-const routeDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const typeDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const statusDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const typeOptions: DeepLinkType[] = ["referral", "route", "link"];
+const statusOptions: DeepLinkStatus[] = ["active", "inactive"];
 
-const typeOptions: Array<{
-  value: DeepLinkType;
-  label: string;
-  description: string;
-}> = [
-  { value: "referral", label: "Referral", description: "Sign up with a code" },
-  { value: "route", label: "Route", description: "Open an in-app screen" },
-  { value: "link", label: "Link", description: "Open URL" },
-];
+const TARGET_COPY: Record<DeepLinkType, { label: string; placeholder: string }> =
+  {
+    referral: {
+      label: "Target (where the referral lands)",
+      placeholder: "https://vent.africa/campus-tour",
+    },
+    route: {
+      label: "Target (in-app route)",
+      placeholder: "/initiate-verification",
+    },
+    link: {
+      label: "Target URL",
+      placeholder: "https://vent.africa/blog/launch",
+    },
+  };
 
-/** Switches the selected deep-link type and clears type-specific validation feedback. */
+/** Label and placeholder for the target input based on the selected type. */
+const targetCopy = computed(() => TARGET_COPY[form.value.type]);
+
+/** Selects the link type, revalidates the target, and closes the menu. */
 const selectType = (type: DeepLinkType): void => {
-  draft.value.type = type;
+  form.value.type = type;
   emit("touch", "type");
+  if (form.value.target) emit("touch", "target");
+  typeDropdown.value?.closeDropdown();
 };
 
-/** Assigns the permitted application route and dismisses its menu. */
-const selectRoute = (route: string): void => {
-  draft.value.route = route;
-  emit("touch", "route");
-  routeDropdown.value?.closeDropdown();
-};
-
-/** Changes the preview image source and clears the prior source value. */
-const selectImageMode = (mode: DeepLinkDraft["previewImageMode"]): void => {
-  draft.value.previewImageMode = mode;
-  draft.value.previewImageFile = null;
-  draft.value.previewImageUrl = "";
-  emit("touch", "previewImageUrl");
-};
-
-/** Sends a selected local image to the parent so it can retain the preview URL. */
-const selectImageFile = (file: File | null): void => {
-  draft.value.previewImageFile = file;
-  emit("imageFileSelected", file);
-  emit("touch", "previewImageUrl");
+/** Selects the link status and closes the status menu. */
+const selectStatus = (status: DeepLinkStatus): void => {
+  form.value.status = status;
+  emit("touch", "status");
+  statusDropdown.value?.closeDropdown();
 };
 </script>
 
 <template>
-  <div class="space-y-4">
-    <template v-if="props.includeDestination">
-      <AppInputContainer
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <AppInputContainer
+      label="Name"
+      for="deep-link-name"
+      :error="props.errors.name"
+      class="md:col-span-2"
+    >
+      <input
+        id="deep-link-name"
+        v-model="form.name"
+        type="text"
+        autocomplete="off"
+        placeholder="e.g. Campus Tour Promo"
+        :aria-invalid="Boolean(props.errors.name)"
+        @blur="emit('touch', 'name')"
+      />
+    </AppInputContainer>
+
+    <AppInputContainer
       label="Type"
       for="deep-link-type"
       :error="props.errors.type"
+      :class="{ 'md:col-span-2': !props.showStatus }"
+    >
+      <AppDropdown
+        ref="typeDropdown"
+        position="left"
+        :width-is-finite="false"
+        :container-full="true"
       >
-        <fieldset id="deep-link-type" class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <legend class="sr-only">Deep link type</legend>
+        <template #default>
           <button
-            v-for="option in typeOptions"
-            :key="option.value"
+            id="deep-link-type"
             type="button"
-            class="rounded-lg border p-3 text-left transition"
-            :class="
-              draft.type === option.value
-                ? 'border-brand-color-default bg-brand-primary-001 text-brand-color-default'
-                : 'border-dashboard-card-border bg-dashboard-bg text-dashboard-heading hover:border-brand-color-default'
-            "
-            :aria-pressed="draft.type === option.value"
-            @click="selectType(option.value)"
+            class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
+            aria-haspopup="listbox"
           >
-            <span class="block text-base font-medium">{{ option.label }}</span>
-            <span class="mt-1 block text-xs text-dashboard-text">{{ option.description }}</span>
+            {{ DEEP_LINK_TYPE_LABELS[form.type] }}
+            <Icon name="vent:arrow-down" size="1rem" class="shrink-0 text-dashboard-text" />
           </button>
-        </fieldset>
-      </AppInputContainer>
+        </template>
+        <template #dropdown_body>
+          <div role="listbox" aria-label="Type" class="min-w-56 space-y-1">
+            <button
+              v-for="option in typeOptions"
+              :key="option"
+              type="button"
+              role="option"
+              :aria-selected="form.type === option"
+              class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+              :class="{ 'bg-dashboard-bg-dark': form.type === option }"
+              @click="selectType(option)"
+            >
+              {{ DEEP_LINK_TYPE_LABELS[option] }}
+            </button>
+          </div>
+        </template>
+      </AppDropdown>
+    </AppInputContainer>
 
-    <template v-if="draft.type === 'referral'">
-      <AppInputContainer
-        label="Internal Name (Optional, not sent to Branch)"
-        for="deep-link-internal-name"
-        :error="props.errors.internalName"
+    <AppInputContainer
+      v-if="props.showStatus"
+      label="Status"
+      for="deep-link-status"
+      :error="props.errors.status"
+    >
+      <AppDropdown
+        ref="statusDropdown"
+        position="left"
+        :width-is-finite="false"
+        :container-full="true"
       >
-        <input
-          id="deep-link-internal-name"
-          v-model.trim="draft.internalName"
-          type="text"
-          autocomplete="off"
-          placeholder="Enter name"
-          @blur="emit('touch', 'internalName')"
-        />
-      </AppInputContainer>
-
-      <AppInputContainer
-        label="Referral Code (Pre-filled code shown in the app)"
-        for="deep-link-referral-code"
-        :error="props.errors.referralCode"
-      >
-        <input
-          id="deep-link-referral-code"
-          v-model.trim="draft.referralCode"
-          type="text"
-          autocomplete="off"
-          placeholder="Enter code"
-          :aria-invalid="Boolean(props.errors.referralCode)"
-          @blur="emit('touch', 'referralCode')"
-        />
-      </AppInputContainer>
-    </template>
-
-    <template v-else-if="draft.type === 'route'">
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <AppInputContainer
-          label="In-app Route (Only route on mobile app allow list)"
-          for="deep-link-route"
-          :error="props.errors.route"
-        >
-          <AppDropdown
-            ref="routeDropdown"
-            position="left"
-            :width-is-finite="false"
-            :container-full="true"
-          >
-            <template #default>
-              <button
-                id="deep-link-route"
-                type="button"
-                class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
-                :aria-invalid="Boolean(props.errors.route)"
-                aria-haspopup="listbox"
-              >
-                {{ deepLinkRouteOptions.find((option) => option.value === draft.route)?.label || 'Select option' }}
-                <Icon name="vent:arrow-down" size="1rem" class="shrink-0 text-dashboard-text" />
-              </button>
-            </template>
-            <template #dropdown_body>
-              <div role="listbox" aria-label="In-app Route" class="min-w-56 space-y-1">
-                <button
-                  v-for="option in deepLinkRouteOptions"
-                  :key="option.value"
-                  type="button"
-                  role="option"
-                  :aria-selected="draft.route === option.value"
-                  class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                  :class="{ 'bg-dashboard-bg-dark': draft.route === option.value }"
-                  @click="selectRoute(option.value)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
-            </template>
-          </AppDropdown>
-        </AppInputContainer>
-
-        <AppInputContainer
-          label="Route Parameter"
-          for="deep-link-route-parameter"
-          :error="props.errors.routeParameter"
-        >
-          <input
-            id="deep-link-route-parameter"
-            v-model.trim="draft.routeParameter"
-            type="text"
-            autocomplete="off"
-            placeholder="Optional parameter"
-            @blur="emit('touch', 'routeParameter')"
-          />
-        </AppInputContainer>
-      </div>
-    </template>
-
-    <template v-else>
-      <AppInputContainer
-        label="URL (Open in in-app web view or external browser)"
-        for="deep-link-url"
-        :error="props.errors.url"
-      >
-        <input
-          id="deep-link-url"
-          v-model.trim="draft.url"
-          type="url"
-          autocomplete="url"
-          placeholder="https://example.com"
-          :aria-invalid="Boolean(props.errors.url)"
-          @blur="emit('touch', 'url')"
-        />
-      </AppInputContainer>
-
-      <AppInputContainer
-        label="Open link in"
-        for="deep-link-browser-mode"
-        :error="props.errors.browserMode"
-      >
-        <fieldset id="deep-link-browser-mode" class="flex flex-col gap-3 py-1">
-          <legend class="sr-only">Browser destination</legend>
-          <label class="flex cursor-pointer items-center gap-3 text-sm text-dashboard-heading">
-            <AppRadio v-model:radio="draft.browserMode" name="deep-link-browser-mode" value="in-app" />
-            Open in the app web view
-          </label>
-          <label class="flex cursor-pointer items-center gap-3 text-sm text-dashboard-heading">
-            <AppRadio v-model:radio="draft.browserMode" name="deep-link-browser-mode" value="external" />
-            Use external browser
-          </label>
-        </fieldset>
-      </AppInputContainer>
-    </template>
-
-    </template>
-
-    <template v-if="props.includePreview">
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <AppInputContainer
-          label="Preview Title (Shown when link is posted)"
-          for="deep-link-preview-title"
-          :error="props.errors.previewTitle"
-        >
-          <input
-            id="deep-link-preview-title"
-            v-model.trim="draft.previewTitle"
-            type="text"
-            autocomplete="off"
-            placeholder="e.g. Vent"
-            :aria-invalid="Boolean(props.errors.previewTitle)"
-            @blur="emit('touch', 'previewTitle')"
-          />
-        </AppInputContainer>
-
-        <AppInputContainer
-          label="Preview Description"
-          for="deep-link-preview-description"
-          :error="props.errors.previewDescription"
-        >
-          <input
-            id="deep-link-preview-description"
-            v-model.trim="draft.previewDescription"
-            type="text"
-            autocomplete="off"
-            placeholder="e.g. Join me on Vent"
-            :aria-invalid="Boolean(props.errors.previewDescription)"
-            @blur="emit('touch', 'previewDescription')"
-          />
-        </AppInputContainer>
-      </div>
-
-      <section aria-labelledby="deep-link-preview-image-heading" class="space-y-3">
-        <h3 id="deep-link-preview-image-heading" class="text-sm font-medium text-dashboard-heading">
-          Preview Image
-          <span class="font-normal text-dashboard-text">(Image shown when link is shared)</span>
-        </h3>
-
-        <div class="flex flex-wrap gap-2" role="group" aria-label="Preview image source">
-          <AppButton
+        <template #default>
+          <button
+            id="deep-link-status"
             type="button"
-            size="sm"
-            :outlined="true"
-            :color="draft.previewImageMode === 'upload' ? 'primary' : 'neutral'"
-            class="!px-3 !py-2"
-            :aria-pressed="draft.previewImageMode === 'upload'"
-            @click="selectImageMode('upload')"
+            class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
+            aria-haspopup="listbox"
           >
-            <Icon name="vent:direct-inbox" size="1rem" />
-            Upload Image
-          </AppButton>
-          <AppButton
-            type="button"
-            size="sm"
-            :outlined="true"
-            :color="draft.previewImageMode === 'url' ? 'primary' : 'neutral'"
-            class="!px-3 !py-2"
-            :aria-pressed="draft.previewImageMode === 'url'"
-            @click="selectImageMode('url')"
-          >
-            <Icon name="vent:link-2" size="1rem" />
-            Paste URL
-          </AppButton>
-        </div>
+            {{ DEEP_LINK_STATUS_LABELS[form.status] }}
+            <Icon name="vent:arrow-down" size="1rem" class="shrink-0 text-dashboard-text" />
+          </button>
+        </template>
+        <template #dropdown_body>
+          <div role="listbox" aria-label="Status" class="min-w-56 space-y-1">
+            <button
+              v-for="option in statusOptions"
+              :key="option"
+              type="button"
+              role="option"
+              :aria-selected="form.status === option"
+              class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+              :class="{ 'bg-dashboard-bg-dark': form.status === option }"
+              @click="selectStatus(option)"
+            >
+              {{ DEEP_LINK_STATUS_LABELS[option] }}
+            </button>
+          </div>
+        </template>
+      </AppDropdown>
+    </AppInputContainer>
 
-        <AppFileSelector
-          v-if="draft.previewImageMode === 'upload'"
-          :model-value="draft.previewImageFile"
-          :allowed-types="['image/png', 'image/jpeg', 'image/jpg', 'image/webp']"
-          :max-size-in-mb="5"
-          variant="compact"
-          @update:model-value="selectImageFile($event)"
-        />
+    <AppInputContainer
+      v-if="form.type === 'referral'"
+      label="Referral code (optional)"
+      for="deep-link-referral-code"
+      :error="props.errors.referral_code"
+      :class="{ 'md:col-span-2': !props.showStatus }"
+    >
+      <input
+        id="deep-link-referral-code"
+        v-model="form.referral_code"
+        type="text"
+        autocomplete="off"
+        placeholder="e.g. CAMP26"
+        class="uppercase"
+        :aria-invalid="Boolean(props.errors.referral_code)"
+        @blur="emit('touch', 'referral_code')"
+      />
+    </AppInputContainer>
 
-        <AppInputContainer
-          v-else
-          for="deep-link-preview-image"
-          :error="props.errors.previewImageUrl"
-        >
-          <input
-            id="deep-link-preview-image"
-            v-model.trim="draft.previewImageUrl"
-            type="url"
-            autocomplete="url"
-            placeholder="Paste URL"
-            :aria-invalid="Boolean(props.errors.previewImageUrl)"
-            @blur="emit('touch', 'previewImageUrl')"
-          />
-        </AppInputContainer>
-      </section>
-    </template>
+    <AppInputContainer
+      :label="targetCopy.label"
+      for="deep-link-target"
+      :error="props.errors.target"
+      class="md:col-span-2"
+    >
+      <input
+        id="deep-link-target"
+        v-model="form.target"
+        :type="form.type === 'route' ? 'text' : 'url'"
+        autocomplete="off"
+        :placeholder="targetCopy.placeholder"
+        :aria-invalid="Boolean(props.errors.target)"
+        @blur="emit('touch', 'target')"
+      />
+    </AppInputContainer>
+
+    <div class="border-t border-dashboard-card-border pt-4 md:col-span-2">
+      <h3 class="text-sm font-medium text-dashboard-heading">Link preview (optional)</h3>
+      <p class="mt-1 text-xs text-dashboard-text">Shown when the link is shared.</p>
+    </div>
+
+    <AppInputContainer
+      label="Preview title"
+      for="deep-link-preview-title"
+      :error="props.errors.preview_title"
+      class="md:col-span-2"
+    >
+      <input
+        id="deep-link-preview-title"
+        v-model="form.preview_title"
+        type="text"
+        autocomplete="off"
+        placeholder="e.g. Join the Campus Tour"
+        :aria-invalid="Boolean(props.errors.preview_title)"
+        @blur="emit('touch', 'preview_title')"
+      />
+    </AppInputContainer>
+
+    <AppInputContainer
+      label="Preview description"
+      for="deep-link-preview-description"
+      :error="props.errors.preview_description"
+      class="md:col-span-2"
+    >
+      <textarea
+        id="deep-link-preview-description"
+        v-model="form.preview_description"
+        rows="3"
+        placeholder="e.g. Sign up and start trading."
+        class="w-full resize-none bg-transparent outline-none"
+        :aria-invalid="Boolean(props.errors.preview_description)"
+        @blur="emit('touch', 'preview_description')"
+      />
+    </AppInputContainer>
+
+    <AppInputContainer
+      label="Preview image URL"
+      for="deep-link-preview-image"
+      :error="props.errors.preview_image_url"
+      class="md:col-span-2"
+    >
+      <input
+        id="deep-link-preview-image"
+        v-model="form.preview_image_url"
+        type="url"
+        autocomplete="off"
+        placeholder="https://assets.vent.africa/previews/campus.png"
+        :aria-invalid="Boolean(props.errors.preview_image_url)"
+        @blur="emit('touch', 'preview_image_url')"
+      />
+    </AppInputContainer>
   </div>
 </template>

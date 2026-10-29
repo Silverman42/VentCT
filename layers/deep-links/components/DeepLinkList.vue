@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { useDebounceFn } from "@vueuse/core";
+import type { AppDropdown } from "#components";
+import { DateFormatter } from "~/utils/helpers/DateFormatter";
 import type { ITableHeaderData } from "~/utils/types/misc/TableComponent";
 import {
-  getDeepLinkTypeLabel,
-  type DeepLink,
-  useDeepLinkStore,
+  DEEP_LINK_STATUS_LABELS,
+  DEEP_LINK_TYPE_LABELS,
+  type DeepLinkStatusFilter,
+  type DeepLinkTypeFilter,
+  type IDeepLink,
 } from "../composables/useDeepLinkStore";
 import type { DeepLinkConfirmationAction } from "./DeepLinkConfirmationModal.vue";
 
@@ -13,351 +17,363 @@ interface NewModalController {
 }
 
 interface EditModalController {
-  open: (deepLink: DeepLink) => void;
+  open: (deepLink: IDeepLink) => void;
 }
 
 interface ViewModalController {
-  open: (id: string) => void;
+  open: (deepLink: IDeepLink) => void;
 }
 
 interface ConfirmationModalController {
-  open: (action: DeepLinkConfirmationAction, deepLink: DeepLink) => void;
+  open: (action: DeepLinkConfirmationAction, deepLink: IDeepLink) => void;
 }
 
-const DEEP_LINKS_PER_PAGE = 10;
+/** Template-ready table row derived from a deep link. */
+interface DeepLinkRow extends IDeepLink {
+  typeLabel: string;
+  statusLabel: string;
+  linkUrl: string;
+  clicksLabel: string;
+  createdLabel: string;
+}
 
-const route = useRoute();
-const router = useRouter();
 const {
   deepLinks,
+  deepLinkStats,
   fetchingDeepLinks,
+  deepLinksPage,
+  deepLinksPerPage,
+  deepLinksTotal,
+  deepLinksSearch,
+  deepLinksType,
+  deepLinksStatus,
   fetchDeepLinks,
-  regenerateDeepLink,
-  deleteDeepLink,
+  setDeepLinksSearch,
+  setDeepLinksType,
+  setDeepLinksStatus,
 } = useDeepLinkStore();
 
 const newDeepLinkModal = ref<NewModalController | null>(null);
 const editDeepLinkModal = ref<EditModalController | null>(null);
 const viewDeepLinkModal = ref<ViewModalController | null>(null);
 const confirmationModal = ref<ConfirmationModalController | null>(null);
-const isApplyingRoute = ref(false);
+const typeDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const statusDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
+const searchInput = ref(deepLinksSearch.value);
+const hasLoaded = ref(false);
+const loadFailed = ref(false);
+
+const typeOptions: DeepLinkTypeFilter[] = ["all", "referral", "route", "link"];
+const statusOptions: DeepLinkStatusFilter[] = ["all", "active", "inactive"];
 
 const tableHeadings: ITableHeaderData[] = [
-  { id: "name", name: "Name", width: "13rem" },
-  { id: "type", name: "Type", width: "10rem" },
-  { id: "provider", name: "Provider", width: "11rem", isHiddenOnMobile: true },
-  { id: "target", name: "Target", width: "16rem" },
-  { id: "generatedLink", name: "Link", width: "20rem" },
-  { id: "clicks", name: "Clicks", justify: "right", width: "7rem" },
-  { id: "status", name: "Status", width: "9rem" },
+  { id: "name", name: "Name", width: "14rem" },
+  { id: "type", name: "Type", width: "7rem" },
+  { id: "link_url", name: "Link", width: "18rem" },
+  { id: "target", name: "Target", width: "18rem", isHiddenOnMobile: true },
+  { id: "clicks_count", name: "Clicks", justify: "right", width: "6rem" },
+  { id: "status", name: "Status", width: "7rem" },
+  { id: "created_at", name: "Created", width: "8rem", isHiddenOnMobile: true },
   { id: "actions", name: "", justify: "right", width: "4rem" },
 ];
 
-/** Reads the first scalar string from a Nuxt query value. */
-const getQueryValue = (
-  value: string | null | Array<string | null> | undefined,
-): string => {
-  const scalarValue = Array.isArray(value)
-    ? value.find((item): item is string => typeof item === "string")
-    : value;
-
-  return typeof scalarValue === "string" ? scalarValue : "";
-};
-
-/** Converts valid deep-link list query values into local view state. */
-const getRouteState = (): { search: string; page: number } => {
-  const requestedPage = Number.parseInt(getQueryValue(route.query.page), 10);
-
-  return {
-    search: getQueryValue(route.query.search),
-    page:
-      Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1,
-  };
-};
-
-const initialRouteState = getRouteState();
-const searchInput = ref(initialRouteState.search);
-const currentPage = ref(initialRouteState.page);
-
-/** Filters local records against every user-visible identifying field. */
-const filteredDeepLinks = computed<DeepLink[]>(() => {
-  const searchTerm = searchInput.value.trim().toLocaleLowerCase();
-  if (!searchTerm) return deepLinks.value;
-
-  return deepLinks.value.filter((deepLink) =>
-    [
-      deepLink.name,
-      deepLink.type,
-      deepLink.provider,
-      deepLink.target,
-      deepLink.generatedLink,
-      deepLink.status,
-    ]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(searchTerm),
-  );
-});
-
-/** Derives the available local page count from the currently filtered records. */
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredDeepLinks.value.length / DEEP_LINKS_PER_PAGE)),
-);
-
-/** Selects the current page slice for the shared responsive table. */
-const pagedDeepLinks = computed(() => {
-  const start = (currentPage.value - 1) * DEEP_LINKS_PER_PAGE;
-  return filteredDeepLinks.value.slice(start, start + DEEP_LINKS_PER_PAGE);
-});
-
-/** Computes the summary cards directly from the latest fixture state. */
-const summaryMetrics = computed(() => [
-  { label: "Total Links", value: deepLinks.value.length },
-  {
-    label: "Active",
-    value: deepLinks.value.filter((deepLink) => deepLink.status === "active").length,
-  },
-  {
-    label: "Total Clicks",
-    value: deepLinks.value.reduce((total, deepLink) => total + deepLink.clicks, 0),
-  },
+/** Summary cards shown above the deep-links table. */
+const statCards = computed(() => [
+  { label: "Total Links", value: deepLinkStats.value.total },
+  { label: "Active", value: deepLinkStats.value.active },
+  { label: "Inactive", value: deepLinkStats.value.inactive },
+  { label: "Total Clicks", value: deepLinkStats.value.clicks },
 ]);
 
-/** Synchronizes visible list controls to compact, shareable route query values. */
-const syncRouteState = (): void => {
-  const nextQuery: Record<string, string> = {};
-  if (searchInput.value.trim()) nextQuery.search = searchInput.value.trim();
-  if (currentPage.value > 1) nextQuery.page = String(currentPage.value);
+/** Formats a type filter option into its visible label. */
+const getTypeFilterLabel = (filter: DeepLinkTypeFilter): string =>
+  filter === "all" ? "All types" : DEEP_LINK_TYPE_LABELS[filter];
 
-  const currentQuery = {
-    search: getQueryValue(route.query.search),
-    page: getQueryValue(route.query.page),
-  };
+/** Formats a status filter option into its visible label. */
+const getStatusFilterLabel = (filter: DeepLinkStatusFilter): string =>
+  filter === "all" ? "All statuses" : DEEP_LINK_STATUS_LABELS[filter];
 
-  if (
-    currentQuery.search === (nextQuery.search ?? "") &&
-    currentQuery.page === (nextQuery.page ?? "")
-  ) {
-    return;
+/** Maps API deep links to rows, preferring the API-provided `*_label` fields. */
+const rows = computed<DeepLinkRow[]>(() =>
+  deepLinks.value.map((deepLink) => ({
+    ...deepLink,
+    typeLabel:
+      deepLink.type_label ||
+      DEEP_LINK_TYPE_LABELS[deepLink.type] ||
+      deepLink.type,
+    statusLabel:
+      deepLink.status_label ||
+      DEEP_LINK_STATUS_LABELS[deepLink.status] ||
+      deepLink.status,
+    linkUrl: deepLink.link_url ?? "",
+    clicksLabel: (deepLink.clicks_count ?? 0).toLocaleString("en-US"),
+    createdLabel: deepLink.created_at
+      ? DateFormatter.formatDate(deepLink.created_at)
+      : "—",
+  })),
+);
+
+/** Runs a list request and records whether it failed for the error state. */
+const runListRequest = async (request: () => Promise<unknown>): Promise<void> => {
+  loadFailed.value = false;
+  try {
+    await request();
+  } catch {
+    loadFailed.value = true;
+  } finally {
+    hasLoaded.value = true;
   }
-
-  void router.replace({ path: route.path, query: nextQuery });
 };
 
-/** Defers route replacement while a user continues typing in search. */
-const syncDebouncedSearch = useDebounceFn(syncRouteState, 300);
+/** Loads the current page of deep links. */
+const loadDeepLinks = (): Promise<void> => runListRequest(() => fetchDeepLinks());
 
-/** Applies browser navigation changes back into local search and page controls. */
-const applyRouteState = (): void => {
-  const nextState = getRouteState();
-  isApplyingRoute.value = true;
-  searchInput.value = nextState.search;
-  currentPage.value = nextState.page;
-  isApplyingRoute.value = false;
+/** Applies a type filter, closes its menu, and reloads page 1. */
+const selectType = (filter: DeepLinkTypeFilter): void => {
+  typeDropdown.value?.closeDropdown();
+  if (filter === deepLinksType.value) return;
+  void runListRequest(() => setDeepLinksType(filter));
 };
 
-/** Opens a fresh multi-step creation dialog. */
+/** Applies a status filter, closes its menu, and reloads page 1. */
+const selectStatus = (filter: DeepLinkStatusFilter): void => {
+  statusDropdown.value?.closeDropdown();
+  if (filter === deepLinksStatus.value) return;
+  void runListRequest(() => setDeepLinksStatus(filter));
+};
+
+/** Sends the debounced search term to the API. */
+const applySearch = useDebounceFn((term: string) => {
+  void runListRequest(() => setDeepLinksSearch(term));
+}, 300);
+
+/** Loads the requested page of deep links. */
+const changePage = (page: number): void => {
+  void fetchDeepLinks(page).catch(() => undefined);
+};
+
+/** Opens a fresh creation dialog. */
 const openNewDeepLinkModal = (): void => {
   newDeepLinkModal.value?.open();
 };
 
-/** Opens the selected record in its configured side-panel detail view. */
-const openViewModal = (deepLink: DeepLink): void => {
-  viewDeepLinkModal.value?.open(deepLink.id);
+/** Opens the selected record in the side-panel detail view. */
+const openViewModal = (deepLink: IDeepLink): void => {
+  viewDeepLinkModal.value?.open(deepLink);
 };
 
-/** Opens the selected record in the modal editor. */
-const openEditModal = (deepLink: DeepLink): void => {
+/** Opens the selected record in the editor. */
+const openEditModal = (deepLink: IDeepLink): void => {
   editDeepLinkModal.value?.open(deepLink);
 };
 
-/** Opens a configured regeneration or deletion confirmation flow. */
+/** Opens a status-toggle or deletion confirmation for one record. */
 const openConfirmation = (
   action: DeepLinkConfirmationAction,
-  deepLink: DeepLink,
+  deepLink: IDeepLink,
 ): void => {
   confirmationModal.value?.open(action, deepLink);
 };
 
-/** Performs the confirmed local mutation and reports its result to the user. */
-const handleConfirmedAction = async (
-  action: DeepLinkConfirmationAction,
-  deepLink: DeepLink,
-): Promise<void> => {
-  if (action === "regenerate") {
-    await regenerateDeepLink(deepLink.id);
-    useToastHandler().triggerToast(
-      "A new generated URL is ready to copy and share.",
-      "success",
-      "Link regenerated",
-      "large",
-    );
-    return;
-  }
-
-  const wasDeleted = await deleteDeepLink(deepLink.id);
-  if (wasDeleted) {
-    useToastHandler().triggerToast(
-      "The deep link was deleted from this session.",
-      "success",
-      "Deep link deleted",
-      "large",
-    );
-  }
-};
-
-/** Returns the reusable pill tone associated with a deep-link type. */
-const getTypePillColor = (deepLink: DeepLink): "blue" | "orange" | "gray" => {
-  if (deepLink.type === "route") return "blue";
-  if (deepLink.type === "referral") return "orange";
-  return "gray";
-};
-
-/** Shortens a generated URL for the dense table presentation without losing copy access. */
-const getCompactLink = (generatedLink: string): string => {
-  if (generatedLink.length <= 30) return generatedLink;
-  return `${generatedLink.slice(0, 28)}…`;
-};
-
-watch(
-  searchInput,
-  () => {
-    if (isApplyingRoute.value) return;
-    currentPage.value = 1;
-    syncDebouncedSearch();
-  },
-  { flush: "sync" },
-);
-
-watch(
-  currentPage,
-  () => {
-    if (!isApplyingRoute.value) syncRouteState();
-  },
-  { flush: "sync" },
-);
-
-watch(
-  () => route.query,
-  () => applyRouteState(),
-  { deep: true },
-);
-
-watch(
-  totalPages,
-  (lastPage) => {
-    if (currentPage.value > lastPage) currentPage.value = lastPage;
-  },
-  { immediate: true },
-);
+watch(searchInput, (term) => {
+  if (term.trim() !== deepLinksSearch.value) void applySearch(term);
+});
 
 onMounted(() => {
-  void fetchDeepLinks();
+  void loadDeepLinks();
 });
 </script>
 
 <template>
-  <DeepLinkListShimmer v-if="fetchingDeepLinks" />
+  <DeepLinkListShimmer v-if="!hasLoaded" />
 
   <div v-else class="flex w-full flex-col gap-6">
     <AppHeading
-      title="Deep Link"
-      subtitle="Generate shareable links that open users directly to targeted in-app content"
+      title="Deep Links"
+      subtitle="Create Branch links for referrals, in-app routes and external URLs"
     />
 
-    <section class="grid grid-cols-1 gap-3 md:grid-cols-3" aria-label="Deep link summary metrics">
-      <article
-        v-for="metric in summaryMetrics"
-        :key="metric.label"
-        class="flex min-h-[116px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
-      >
-        <p class="text-xs text-dashboard-text">{{ metric.label }}</p>
-        <p class="mt-2 text-2xl font-medium tracking-tight text-dashboard-heading">{{ metric.value }}</p>
-      </article>
+    <section
+      v-if="loadFailed"
+      class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
+    >
+      <h2 class="text-lg font-medium text-dashboard-heading">We couldn't load deep links</h2>
+      <p class="mt-2 max-w-md text-sm text-dashboard-text">
+        Something went wrong while fetching the deep links list. Please try again.
+      </p>
+      <AppButton type="button" size="md" class="mt-5" @click="loadDeepLinks">
+        Retry
+      </AppButton>
     </section>
 
-    <TableComponent
-      :headings="tableHeadings"
-      :body="pagedDeepLinks"
-      empty-heading="No deep links found"
-      empty-subtitle="Try changing the search text or create a new deep link."
-    >
-      <template #table-heading>
-        <TableComponentHeader
-          v-model:search="searchInput"
-          table-name="Deep Link"
-          search-placeholder="Search ..."
+    <template v-else>
+      <section
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        aria-label="Deep link summary"
+      >
+        <article
+          v-for="card in statCards"
+          :key="card.label"
+          class="flex min-h-[104px] flex-col justify-between rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
         >
-          <template #actions>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-color-default px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-color-005"
-              @click="openNewDeepLinkModal"
-            >
-              New Deep Link
-            </button>
-          </template>
-        </TableComponentHeader>
-      </template>
+          <p class="text-xs font-normal text-dashboard-text">{{ card.label }}</p>
+          <p class="mt-1 text-2xl font-medium tracking-tight text-dashboard-heading">
+            {{ card.value.toLocaleString("en-US") }}
+          </p>
+        </article>
+      </section>
 
-      <template #col_type="{ rowData }">
-        <AppPills :color="getTypePillColor(rowData as DeepLink)">
-          {{ getDeepLinkTypeLabel((rowData as DeepLink).type) }}
-        </AppPills>
-      </template>
+      <TableComponent
+        :headings="tableHeadings"
+        :body="rows"
+        :is-loading="fetchingDeepLinks"
+        empty-heading="No deep links found"
+        empty-subtitle="Try changing the search or filters, or create a new deep link."
+      >
+        <template #table-heading>
+          <TableComponentHeader
+            v-model:search="searchInput"
+            table-name="Deep Links"
+            search-placeholder="Search name, code or URL..."
+          >
+            <template #filters>
+              <AppDropdown ref="typeDropdown" position="right" :width-is-finite="false">
+                <template #default>
+                  <button
+                    type="button"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
+                  >
+                    {{ getTypeFilterLabel(deepLinksType) }}
+                    <Icon name="vent:arrow-down" size="0.9rem" />
+                  </button>
+                </template>
+                <template #dropdown_body>
+                  <div class="min-w-40 space-y-1">
+                    <button
+                      v-for="option in typeOptions"
+                      :key="option"
+                      type="button"
+                      class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                      :class="{ 'bg-dashboard-bg-dark': deepLinksType === option }"
+                      @click="selectType(option)"
+                    >
+                      {{ getTypeFilterLabel(option) }}
+                    </button>
+                  </div>
+                </template>
+              </AppDropdown>
 
-      <template #col_target="{ rowData }">
-        <span class="block max-w-56 truncate" :title="(rowData as DeepLink).target">
-          {{ (rowData as DeepLink).target }}
-        </span>
-      </template>
+              <AppDropdown ref="statusDropdown" position="right" :width-is-finite="false">
+                <template #default>
+                  <button
+                    type="button"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
+                  >
+                    {{ getStatusFilterLabel(deepLinksStatus) }}
+                    <Icon name="vent:arrow-down" size="0.9rem" />
+                  </button>
+                </template>
+                <template #dropdown_body>
+                  <div class="min-w-40 space-y-1">
+                    <button
+                      v-for="option in statusOptions"
+                      :key="option"
+                      type="button"
+                      class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                      :class="{ 'bg-dashboard-bg-dark': deepLinksStatus === option }"
+                      @click="selectStatus(option)"
+                    >
+                      {{ getStatusFilterLabel(option) }}
+                    </button>
+                  </div>
+                </template>
+              </AppDropdown>
+            </template>
 
-      <template #col_generatedLink="{ rowData }">
-        <AppClipBoard
-          :text="(rowData as DeepLink).generatedLink"
-          toast-title="Link Copied"
-          toast-message="Deep link copied to clipboard successfully"
-          class="justify-start text-dashboard-heading"
-        >
-          <span class="truncate text-sm" :title="(rowData as DeepLink).generatedLink">
-            {{ getCompactLink((rowData as DeepLink).generatedLink) }}
+            <template #actions>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-color-default px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-color-005"
+                @click="openNewDeepLinkModal"
+              >
+                New Deep Link
+              </button>
+            </template>
+          </TableComponentHeader>
+        </template>
+
+        <template #col_name="{ rowData }">
+          <span class="block truncate font-medium text-dashboard-heading" :title="rowData.name">
+            {{ rowData.name }}
           </span>
-        </AppClipBoard>
-      </template>
+          <span v-if="rowData.referral_code" class="block text-xs text-dashboard-text">
+            {{ rowData.referral_code }}
+          </span>
+        </template>
 
-      <template #col_clicks="{ rowData }">
-        {{ (rowData as DeepLink).clicks.toLocaleString() }}
-      </template>
+        <template #col_type="{ rowData }">
+          {{ rowData.typeLabel }}
+        </template>
 
-      <template #col_status="{ rowData }">
-        <AppPills :color="(rowData as DeepLink).status === 'active' ? 'green' : 'gray'">
-          {{ (rowData as DeepLink).status === 'active' ? 'Active' : 'Inactive' }}
-        </AppPills>
-      </template>
+        <template #col_link_url="{ rowData }">
+          <AppClipBoard
+            v-if="rowData.linkUrl"
+            :text="rowData.linkUrl"
+            toast-title="Link Copied"
+            toast-message="Deep link copied to clipboard successfully"
+            class="justify-start text-dashboard-heading"
+          >
+            <span class="block max-w-64 truncate text-sm" :title="rowData.linkUrl">
+              {{ rowData.linkUrl }}
+            </span>
+          </AppClipBoard>
+          <span v-else class="text-dashboard-text">—</span>
+        </template>
 
-      <template #col_actions="{ rowData }">
-        <DeepLinkRowActions
-          :deep-link="rowData as DeepLink"
-          @view="openViewModal"
-          @edit="openEditModal"
-          @regenerate="openConfirmation('regenerate', $event)"
-          @delete="openConfirmation('delete', $event)"
-        />
-      </template>
+        <template #col_target="{ rowData }">
+          <span class="block max-w-64 truncate text-sm" :title="rowData.target">
+            {{ rowData.target || "—" }}
+          </span>
+        </template>
 
-      <template #table-footer>
-        <TableComponentPagination
-          :page="currentPage"
-          :per-page="DEEP_LINKS_PER_PAGE"
-          :total-items="filteredDeepLinks.length"
-          @change-page="currentPage = $event"
-        />
-      </template>
-    </TableComponent>
+        <template #col_clicks_count="{ rowData }">
+          {{ rowData.clicksLabel }}
+        </template>
+
+        <template #col_status="{ rowData }">
+          <AppPills :color="rowData.status === 'active' ? 'green' : 'gray'">
+            {{ rowData.statusLabel }}
+          </AppPills>
+        </template>
+
+        <template #col_created_at="{ rowData }">
+          {{ rowData.createdLabel }}
+        </template>
+
+        <template #col_actions="{ rowData }">
+          <DeepLinkRowActions
+            :deep-link="rowData as IDeepLink"
+            @view="openViewModal"
+            @edit="openEditModal"
+            @toggle="openConfirmation('toggle', $event)"
+            @delete="openConfirmation('delete', $event)"
+          />
+        </template>
+
+        <template #table-footer>
+          <TableComponentPagination
+            :page="deepLinksPage"
+            :per-page="deepLinksPerPage"
+            :total-items="deepLinksTotal"
+            @change-page="changePage"
+          />
+        </template>
+      </TableComponent>
+    </template>
 
     <DeepLinkNewModal ref="newDeepLinkModal" />
     <DeepLinkEditModal ref="editDeepLinkModal" />
-    <DeepLinkViewSideModal ref="viewDeepLinkModal" />
-    <DeepLinkConfirmationModal ref="confirmationModal" @confirm="handleConfirmedAction" />
+    <DeepLinkViewSideModal ref="viewDeepLinkModal" @edit="openEditModal" />
+    <DeepLinkConfirmationModal ref="confirmationModal" />
   </div>
 </template>

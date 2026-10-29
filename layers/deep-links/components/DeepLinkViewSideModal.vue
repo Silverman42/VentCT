@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { DateFormatter } from "~/utils/helpers/DateFormatter";
 import {
-  getDeepLinkTypeLabel,
-  type DeepLink,
-  useDeepLinkStore,
+  DEEP_LINK_STATUS_LABELS,
+  DEEP_LINK_TYPE_LABELS,
+  type IDeepLink,
 } from "../composables/useDeepLinkStore";
 
 interface SideModalController {
@@ -10,32 +11,82 @@ interface SideModalController {
   hideDialogBox: () => void;
 }
 
+const emit = defineEmits<{
+  edit: [deepLink: IDeepLink];
+}>();
+
 const sideModal = ref<SideModalController | null>(null);
-const deepLinkId = ref("");
-const { getDeepLinkById } = useDeepLinkStore();
+const loadFailed = ref(false);
+const { selectedDeepLink, fetchingDeepLinkDetails, fetchDeepLinkDetails } =
+  useDeepLinkStore();
 
-/** Maps the selected deep-link ID to one safe side-panel view model. */
-const profile = computed<DeepLink | null>(() =>
-  getDeepLinkById(deepLinkId.value) ?? null,
-);
+/** Formats an ISO timestamp as a date, or a dash when missing. */
+const formatDate = (value?: string): string =>
+  value ? DateFormatter.formatDate(value) : "—";
 
-/** Opens the requested deep-link details in the shared side-modal primitive. */
-const open = (id: string): void => {
-  deepLinkId.value = id;
-  sideModal.value?.showDialogBox();
+/** Maps the selected deep link into template-ready values with fallbacks. */
+const profile = computed(() => {
+  const deepLink = selectedDeepLink.value;
+  if (!deepLink) return null;
+
+  return {
+    name: deepLink.name || "—",
+    typeLabel:
+      deepLink.type_label || DEEP_LINK_TYPE_LABELS[deepLink.type] || deepLink.type,
+    provider: deepLink.provider
+      ? deepLink.provider.charAt(0).toUpperCase() + deepLink.provider.slice(1)
+      : "—",
+    isActive: deepLink.status === "active",
+    statusLabel:
+      deepLink.status_label ||
+      DEEP_LINK_STATUS_LABELS[deepLink.status] ||
+      deepLink.status ||
+      "Unknown",
+    linkUrl: deepLink.link_url ?? "",
+    target: deepLink.target || "—",
+    referralCode: deepLink.referral_code ?? "",
+    clicks: (deepLink.clicks_count ?? 0).toLocaleString("en-US"),
+    createdAt: formatDate(deepLink.created_at),
+    updatedAt: formatDate(deepLink.updated_at),
+    creatorName: deepLink.creator?.name ?? "",
+    creatorEmail: deepLink.creator?.email ?? "",
+    previewTitle: deepLink.preview_title || "—",
+    previewDescription: deepLink.preview_description || "—",
+    previewImageUrl: deepLink.preview_image_url ?? "",
+  };
+});
+
+/** Loads the latest details for one deep link, recording failures for the error state. */
+const loadDetails = async (id: string): Promise<void> => {
+  loadFailed.value = false;
+  try {
+    const result = await fetchDeepLinkDetails(id);
+    if (!result) loadFailed.value = true;
+  } catch {
+    loadFailed.value = true;
+  }
 };
 
-/** Closes the detail panel and clears the transient selected identifier. */
+const currentId = ref("");
+
+/** Opens the side panel for a list row and fetches its latest details. */
+const open = (deepLink: IDeepLink): void => {
+  currentId.value = deepLink.id;
+  selectedDeepLink.value = null;
+  sideModal.value?.showDialogBox();
+  void loadDetails(deepLink.id);
+};
+
+/** Closes the detail panel. */
 const close = (): void => {
   sideModal.value?.hideDialogBox();
-  deepLinkId.value = "";
 };
 
-/** Formats the stored deep-link type as the supplied detail subtitle. */
-const typeDescription = (deepLink: DeepLink): string => {
-  if (deepLink.type === "route") return "open in an in-app screen";
-  if (deepLink.type === "referral") return "sign up with a code";
-  return "open URL";
+/** Hands the loaded record to the parent's edit flow and closes the panel. */
+const editLink = (): void => {
+  if (!selectedDeepLink.value) return;
+  emit("edit", selectedDeepLink.value);
+  close();
 };
 
 defineExpose({ open, close });
@@ -43,73 +94,124 @@ defineExpose({ open, close });
 
 <template>
   <AppSideModal ref="sideModal" close-button-position="inside">
-    <section v-if="profile" class="flex min-h-full flex-col gap-7 pr-1">
+    <DeepLinkViewShimmer v-if="fetchingDeepLinkDetails" />
+
+    <section
+      v-else-if="loadFailed || !profile"
+      class="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center"
+    >
+      <h2 class="text-lg font-medium text-dashboard-heading">We couldn't load this deep link</h2>
+      <p class="mt-2 max-w-sm text-sm text-dashboard-text">
+        It may have been deleted, or something went wrong. Please try again.
+      </p>
+      <AppButton type="button" size="md" class="mt-5" @click="loadDetails(currentId)">
+        Retry
+      </AppButton>
+    </section>
+
+    <section v-else class="flex min-h-full flex-col gap-7 pr-1">
       <header class="border-b border-dashboard-card-border pb-6 pr-12">
         <p class="text-sm text-dashboard-text">View deep link details</p>
         <div class="mt-2 flex flex-wrap items-center gap-3">
-          <h2 class="text-2xl font-medium tracking-tight text-dashboard-heading">
+          <h2 class="break-words text-2xl font-medium tracking-tight text-dashboard-heading">
             {{ profile.name }}
           </h2>
-          <AppPills :color="profile.status === 'active' ? 'green' : 'gray'">
-            {{ profile.status === 'active' ? 'Active' : 'Inactive' }}
+          <AppPills :color="profile.isActive ? 'green' : 'gray'">
+            {{ profile.statusLabel }}
           </AppPills>
         </div>
         <p class="mt-2 text-sm text-dashboard-text">
-          {{ getDeepLinkTypeLabel(profile.type) }} - {{ typeDescription(profile) }}
+          {{ profile.typeLabel }} &nbsp; Provider - {{ profile.provider }} &nbsp; Clicks - {{ profile.clicks }}
         </p>
-        <p class="mt-2 text-sm text-dashboard-text">
-          Provider - {{ profile.provider }} &nbsp; Created - {{ profile.createdAt }} &nbsp; Clicks - {{ profile.clicks }}
+        <p class="mt-1 text-sm text-dashboard-text">
+          Created - {{ profile.createdAt }} &nbsp; Updated - {{ profile.updatedAt }}
         </p>
       </header>
 
       <dl class="space-y-6">
         <div>
-          <dt class="text-sm text-dashboard-text">Target</dt>
-          <dd class="mt-1 break-all text-base font-medium text-dashboard-heading">{{ profile.target }}</dd>
-        </div>
-        <div>
           <dt class="text-sm text-dashboard-text">Generated link</dt>
           <dd class="mt-1">
             <AppClipBoard
-              :text="profile.generatedLink"
+              v-if="profile.linkUrl"
+              :text="profile.linkUrl"
               toast-title="Link Copied"
               toast-message="Deep link copied to clipboard successfully"
-              class="justify-start break-all text-brand-color-default"
+              class="justify-start"
             >
-              <span class="break-all text-base font-medium text-brand-color-default">{{ profile.generatedLink }}</span>
+              <span class="break-all text-base font-medium text-brand-color-default">
+                {{ profile.linkUrl }}
+              </span>
             </AppClipBoard>
+            <span v-else class="text-base text-dashboard-heading">—</span>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-sm text-dashboard-text">Target</dt>
+          <dd class="mt-1 break-all text-base font-medium text-dashboard-heading">
+            {{ profile.target }}
+          </dd>
+        </div>
+        <div v-if="profile.referralCode">
+          <dt class="text-sm text-dashboard-text">Referral code</dt>
+          <dd class="mt-1 text-base font-medium text-dashboard-heading">
+            {{ profile.referralCode }}
+          </dd>
+        </div>
+        <div v-if="profile.creatorName">
+          <dt class="text-sm text-dashboard-text">Created by</dt>
+          <dd class="mt-1 text-base font-medium text-dashboard-heading">
+            {{ profile.creatorName }}
+          </dd>
+          <dd v-if="profile.creatorEmail" class="break-all text-sm text-dashboard-text">
+            {{ profile.creatorEmail }}
           </dd>
         </div>
       </dl>
 
-      <section class="border-t border-dashboard-card-border pt-6" aria-labelledby="link-preview-heading">
-        <h3 id="link-preview-heading" class="text-lg font-medium tracking-tight text-dashboard-heading">
+      <section
+        class="border-t border-dashboard-card-border pt-6"
+        aria-labelledby="deep-link-preview-heading"
+      >
+        <h3
+          id="deep-link-preview-heading"
+          class="text-lg font-medium tracking-tight text-dashboard-heading"
+        >
           Link Preview
         </h3>
-        <p class="mt-1 text-sm text-dashboard-text">Shown when the link is posted.</p>
-        <dl class="mt-6 space-y-5">
+        <p class="mt-1 text-sm text-dashboard-text">Shown when the link is shared.</p>
+        <dl class="mt-5 space-y-5">
           <div>
-            <dt class="text-sm text-dashboard-text">Preview Title</dt>
-            <dd class="mt-1 text-base font-medium text-dashboard-heading">{{ profile.preview.title }}</dd>
+            <dt class="text-sm text-dashboard-text">Preview title</dt>
+            <dd class="mt-1 text-base font-medium text-dashboard-heading">
+              {{ profile.previewTitle }}
+            </dd>
           </div>
           <div>
-            <dt class="text-sm text-dashboard-text">Preview Description</dt>
-            <dd class="mt-1 text-base text-dashboard-heading">{{ profile.preview.description }}</dd>
+            <dt class="text-sm text-dashboard-text">Preview description</dt>
+            <dd class="mt-1 text-base text-dashboard-heading">
+              {{ profile.previewDescription }}
+            </dd>
           </div>
-          <div>
-            <dt class="text-sm text-dashboard-text">Preview Image</dt>
+          <div v-if="profile.previewImageUrl">
+            <dt class="text-sm text-dashboard-text">Preview image</dt>
             <dd class="mt-3">
               <img
-                :src="profile.preview.imageUrl || '/img/logo_primary.svg'"
+                :src="profile.previewImageUrl"
                 alt="Deep link preview"
-                class="h-44 w-full rounded-xl border border-dashboard-card-border bg-dashboard-bg-dark object-contain p-5"
+                class="h-44 w-full rounded-xl border border-dashboard-card-border bg-dashboard-bg-dark object-contain p-3"
               />
             </dd>
           </div>
         </dl>
       </section>
-    </section>
 
-    <DeepLinkViewShimmer v-else />
+      <div class="mt-auto border-t border-dashboard-card-border pt-6">
+        <AppButton type="button" size="md" :block="false" outlined color="primary" @click="editLink">
+          <Icon name="vent:edit" size="1rem" />
+          Edit link
+        </AppButton>
+      </div>
+    </section>
   </AppSideModal>
 </template>

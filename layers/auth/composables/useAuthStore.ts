@@ -1,4 +1,5 @@
 import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
+import { hasAnyPermission } from "~/utils/helpers/Permissions";
 import type { IResponse } from "~/utils/types/misc/ResponseBody";
 
 export interface ILoginPayload {
@@ -60,6 +61,16 @@ export const useAuthStore = () => {
     })),
     /** Whether an authenticated user has been loaded. */
     isAuthenticated: computed<boolean>(() => !!state.user.value),
+    /**
+     * Checks whether the signed-in user holds any of the given permissions.
+     * Super-admins always pass.
+     */
+    can: (required: string | string[]): boolean =>
+      hasAnyPermission(
+        state.user.value?.permissions,
+        required,
+        state.user.value?.roles ?? [],
+      ),
   };
 
   const actions = {
