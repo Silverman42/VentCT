@@ -231,7 +231,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+    <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
       <AppButton
         type="button"
         size="md"

@@ -25,7 +25,7 @@
       </div>
     </section>
 
-    <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+    <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
       <span class="h-11 w-full rounded-lg shimmer-bg sm:w-40" />
       <span class="h-11 w-full rounded-lg shimmer-bg sm:w-40" />
     </div>

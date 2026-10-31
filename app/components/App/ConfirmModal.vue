@@ -42,7 +42,7 @@ const handleCancel = () => {
     </div>
 
     <div>
-      <div class="flex justify-end gap-3">
+      <div class="flex justify-center gap-3">
         <AppButton
           :block="false"
           color="neutral"
