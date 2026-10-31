@@ -112,13 +112,13 @@ export interface IEventAttendeeListResponse {
   attendees: IEventAttendee[];
 }
 
-/** Response data of the standalone event QR code endpoint. */
+/** Response data of the standalone event QR code endpoint (camelCase keys). */
 export interface IEventQrCode {
-  event_id: string;
+  eventId: string;
   name: string;
   slug: string;
-  registration_url: string;
-  qr_code_svg: string;
+  registrationUrl: string;
+  qrCodeSvg: string;
 }
 
 /** Pagination meta returned with list responses (re-exported for existing imports). */

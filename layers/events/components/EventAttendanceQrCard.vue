@@ -21,8 +21,8 @@ const qrCodeFailed = ref(false);
 
 /** Public self-registration link encoded in the QR code for this event. */
 const registrationUrl = computed(() =>
-  eventQrCode.value?.event_id === props.event.id
-    ? eventQrCode.value.registration_url
+  eventQrCode.value?.eventId === props.event.id
+    ? (eventQrCode.value.registrationUrl ?? "")
     : (props.event.registration_url ?? ""),
 );
 
