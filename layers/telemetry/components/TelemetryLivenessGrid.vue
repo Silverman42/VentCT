@@ -43,10 +43,10 @@ const getServiceDetails = (
 ): Array<{ label: string; value: string }> => {
   const details: Array<{ label: string; value: string }> = [];
   if (service.driver) details.push({ label: "Driver", value: service.driver });
-  if (typeof service.latency_ms === "number")
+  if (typeof service.latencyMs === "number")
     details.push({
       label: "Latency",
-      value: `${service.latency_ms.toLocaleString("en-US", { maximumFractionDigits: 2 })} ms`,
+      value: `${service.latencyMs.toLocaleString("en-US", { maximumFractionDigits: 2 })} ms`,
     });
   return details;
 };

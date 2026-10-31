@@ -5,37 +5,37 @@ import type { IResponse } from "~/utils/types/misc/ResponseBody";
 export interface ITelemetryService {
   status: string;
   driver?: string;
-  latency_ms?: number;
+  latencyMs?: number;
 }
 
 /** Horizon queue supervisor status. */
 export interface ITelemetryHorizon {
   status: string;
-  master_supervisors_count?: number;
+  masterSupervisorsCount?: number;
 }
 
 /** Storage volume utilisation; sizes are in megabytes. */
 export interface ITelemetryStorage {
-  storage_path?: string;
-  free_space_mb?: number;
-  total_space_mb?: number;
-  used_percentage?: number;
+  storagePath?: string;
+  freeSpaceMb?: number;
+  totalSpaceMb?: number;
+  usedPercentage?: number;
 }
 
 /** PHP/Laravel runtime details. */
 export interface ITelemetryRuntime {
-  php_version?: string;
-  laravel_version?: string;
-  memory_usage_mb?: number;
+  phpVersion?: string;
+  laravelVersion?: string;
+  memoryUsageMb?: number;
   /** PHP ini notation, e.g. `128M`. */
-  memory_limit?: string;
-  opcache_enabled?: boolean;
+  memoryLimit?: string;
+  opcacheEnabled?: boolean;
 }
 
 /** Backup configuration snapshot. */
 export interface ITelemetryBackup {
   disks?: string[];
-  notifications_enabled?: boolean;
+  notificationsEnabled?: boolean;
 }
 
 /** Response data of the system-health diagnostics endpoint. */

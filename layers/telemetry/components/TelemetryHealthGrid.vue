@@ -45,7 +45,7 @@ const formatTimestamp = (value: string | null | undefined): string =>
 const viewModel = computed(() => {
   const { database, cache, redis, horizon, storage, runtime, backup } =
     props.health;
-  const usage = storage?.used_percentage;
+  const usage = storage?.usedPercentage;
 
   return {
     system: {
@@ -54,40 +54,40 @@ const viewModel = computed(() => {
       reportedAt: formatTimestamp(props.health.timestamp),
     },
     runtime: {
-      php: runtime?.php_version || FALLBACK,
-      laravel: runtime?.laravel_version || FALLBACK,
-      memoryUsage: formatNumber(runtime?.memory_usage_mb, " MB", 1),
-      memoryLimit: runtime?.memory_limit || FALLBACK,
-      opcache: formatFlag(runtime?.opcache_enabled),
+      php: runtime?.phpVersion || FALLBACK,
+      laravel: runtime?.laravelVersion || FALLBACK,
+      memoryUsage: formatNumber(runtime?.memoryUsageMb, " MB", 1),
+      memoryLimit: runtime?.memoryLimit || FALLBACK,
+      opcache: formatFlag(runtime?.opcacheEnabled),
     },
     database: {
       driver: database?.driver || FALLBACK,
-      latency: formatNumber(database?.latency_ms, " ms"),
+      latency: formatNumber(database?.latencyMs, " ms"),
       status: database?.status ?? "",
     },
     cache: {
       driver: cache?.driver || FALLBACK,
-      latency: formatNumber(cache?.latency_ms, " ms"),
+      latency: formatNumber(cache?.latencyMs, " ms"),
       status: cache?.status ?? "",
     },
     redis: {
-      latency: formatNumber(redis?.latency_ms, " ms"),
+      latency: formatNumber(redis?.latencyMs, " ms"),
       status: redis?.status ?? "",
     },
     horizon: {
       status: horizon?.status ?? "",
-      supervisors: formatNumber(horizon?.master_supervisors_count, "", 0),
+      supervisors: formatNumber(horizon?.masterSupervisorsCount, "", 0),
     },
     storage: {
-      free: formatMegabytes(storage?.free_space_mb),
-      total: formatMegabytes(storage?.total_space_mb),
+      free: formatMegabytes(storage?.freeSpaceMb),
+      total: formatMegabytes(storage?.totalSpaceMb),
       usage: formatNumber(usage, "%", 1),
       usageValue: typeof usage === "number" ? usage : 0,
       hasUsage: typeof usage === "number",
     },
     backup: {
       disks: backup?.disks?.length ? backup.disks.join(", ") : FALLBACK,
-      notifications: formatFlag(backup?.notifications_enabled),
+      notifications: formatFlag(backup?.notificationsEnabled),
     },
   };
 });
