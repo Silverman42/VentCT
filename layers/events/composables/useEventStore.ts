@@ -359,7 +359,7 @@ export const useEventStore = () => {
           state.eventSummary.value = response.data?.summary ?? null;
           state.eventsTotal.value = response.meta?.total ?? events.length;
           state.eventsLastPage.value = resolveLastPage(response.meta);
-          state.eventsPage.value = response.meta?.current_page ?? page;
+          state.eventsPage.value = response.meta?.currentPage ?? page;
           return events;
         })
         .catch((error) => {
@@ -567,7 +567,7 @@ export const useEventStore = () => {
           state.attendeeSummary.value = response.data?.summary ?? null;
           state.attendeesTotal.value = response.meta?.total ?? attendees.length;
           state.attendeesLastPage.value = resolveLastPage(response.meta);
-          state.attendeesPage.value = response.meta?.current_page ?? page;
+          state.attendeesPage.value = response.meta?.currentPage ?? page;
           return attendees;
         })
         .catch((error) => {

@@ -6,7 +6,6 @@ import {
   maxLength,
   minValue,
   required,
-  url,
 } from "@vuelidate/validators";
 import type { AppDropdown } from "#components";
 import {
@@ -27,17 +26,18 @@ type CampaignFormMode = "create" | "edit";
 /** Editable campaign fields bound to the form inputs. */
 interface ICampaignForm {
   name: string;
-  description: string;
+  referralCode: string;
+  slug: string;
   target: number | null;
   status: CampaignApiStatus;
   /** `yyyy-MM-dd`, as produced by AppDatePicker. */
-  start_date: string;
+  startsAt: string;
   /** `yyyy-MM-dd`, as produced by AppDatePicker. */
-  end_date: string;
-  banner_url: string;
+  endsAt: string;
 }
 
-const DESCRIPTION_MAX_LENGTH = 1000;
+const REFERRAL_CODE_MAX_LENGTH = 50;
+const SLUG_MAX_LENGTH = 255;
 
 const { createCampaign, creatingCampaign, updateCampaign, updatingCampaign } =
   useCampaignStore();
@@ -49,12 +49,12 @@ const mode = ref<CampaignFormMode>("create");
 const editingCampaignId = ref<string | null>(null);
 const form = reactive<ICampaignForm>({
   name: "",
-  description: "",
+  referralCode: "",
+  slug: "",
   target: null,
   status: "pending",
-  start_date: "",
-  end_date: "",
-  banner_url: "",
+  startsAt: "",
+  endsAt: "",
 });
 
 /** Whether the form is editing an existing campaign. */
@@ -67,17 +67,32 @@ const submitting = computed(() =>
 
 /** Passes when the end date is empty or not before the start date. */
 const notBeforeStartDate = (value: string): boolean =>
-  !value || !form.start_date || value >= form.start_date;
+  !value || !form.startsAt || value >= form.startsAt;
+
+/** Passes when the slug is empty or only uses letters, numbers, dashes and underscores. */
+const isSlugFormat = (value: string): boolean =>
+  !value || /^[A-Za-z0-9_-]+$/.test(value);
 
 /** Validation rules for the campaign form. */
 const validations = computed(() => ({
   name: {
     required: helpers.withMessage("Campaign name is required", required),
   },
-  description: {
+  referralCode: {
+    required: helpers.withMessage("Referral code is required", required),
     maxLength: helpers.withMessage(
-      `Description must be ${DESCRIPTION_MAX_LENGTH} characters or fewer`,
-      maxLength(DESCRIPTION_MAX_LENGTH),
+      `Referral code must be ${REFERRAL_CODE_MAX_LENGTH} characters or fewer`,
+      maxLength(REFERRAL_CODE_MAX_LENGTH),
+    ),
+  },
+  slug: {
+    maxLength: helpers.withMessage(
+      `Slug must be ${SLUG_MAX_LENGTH} characters or fewer`,
+      maxLength(SLUG_MAX_LENGTH),
+    ),
+    isSlugFormat: helpers.withMessage(
+      "Use only letters, numbers, dashes and underscores",
+      isSlugFormat,
     ),
   },
   target: {
@@ -91,18 +106,15 @@ const validations = computed(() => ({
   status: {
     required: helpers.withMessage("Status is required", required),
   },
-  start_date: {
+  startsAt: {
     required: helpers.withMessage("Start date is required", required),
   },
-  end_date: {
+  endsAt: {
     required: helpers.withMessage("End date is required", required),
     notBeforeStartDate: helpers.withMessage(
       "End date cannot be before the start date",
       notBeforeStartDate,
     ),
-  },
-  banner_url: {
-    url: helpers.withMessage("Enter a valid URL", url),
   },
 }));
 
@@ -123,12 +135,12 @@ const toPickerDate = (value: string | null | undefined): string =>
 /** Fills the form from a campaign, or clears it for a new one. */
 const resetForm = (campaign?: ICampaign): void => {
   form.name = campaign?.name ?? "";
-  form.description = campaign?.description ?? "";
+  form.referralCode = campaign?.referralCode ?? "";
+  form.slug = campaign?.slug ?? "";
   form.target = campaign?.target ?? null;
   form.status = campaign?.status ?? "pending";
-  form.start_date = toPickerDate(campaign?.start_date);
-  form.end_date = toPickerDate(campaign?.end_date);
-  form.banner_url = campaign?.banner_url ?? "";
+  form.startsAt = toPickerDate(campaign?.startsAt);
+  form.endsAt = toPickerDate(campaign?.endsAt);
   v$.value.$reset();
 };
 
@@ -157,15 +169,18 @@ const selectStatus = (status: CampaignApiStatus): void => {
   statusDropdown.value?.closeDropdown();
 };
 
-/** Builds the API payload from the form, omitting empty optional fields. */
+/**
+ * Builds the API payload from the form. An empty slug is omitted on create
+ * (the API generates one) and sent as `null` on edit to clear it.
+ */
 const buildPayload = (): ICreateCampaignPayload => ({
   name: form.name,
-  description: form.description || undefined,
+  referralCode: form.referralCode,
+  slug: form.slug || (isEditing.value ? null : undefined),
   status: form.status,
   target: Number(form.target),
-  start_date: form.start_date,
-  end_date: form.end_date,
-  banner_url: form.banner_url || undefined,
+  startsAt: form.startsAt,
+  endsAt: form.endsAt,
 });
 
 /** Validates the form, then creates or updates the campaign. */
@@ -217,6 +232,38 @@ defineExpose({ open, close });
             />
           </AppInputContainer>
         </div>
+
+        <AppInputContainer
+          label="Referral code"
+          for="campaign-form-referral-code"
+          :error="fieldError('referralCode')"
+        >
+          <input
+            id="campaign-form-referral-code"
+            v-model.trim="form.referralCode"
+            type="text"
+            autocomplete="off"
+            placeholder="e.g CAMP26"
+            :aria-invalid="v$.referralCode.$error"
+            @blur="v$.referralCode.$touch()"
+          />
+        </AppInputContainer>
+
+        <AppInputContainer
+          label="Slug (optional)"
+          for="campaign-form-slug"
+          :error="fieldError('slug')"
+        >
+          <input
+            id="campaign-form-slug"
+            v-model.trim="form.slug"
+            type="text"
+            autocomplete="off"
+            placeholder="Generated from the name"
+            :aria-invalid="v$.slug.$error"
+            @blur="v$.slug.$touch()"
+          />
+        </AppInputContainer>
 
         <AppInputContainer
           label="Target"
@@ -290,66 +337,31 @@ defineExpose({ open, close });
         <AppInputContainer
           label="Start date"
           for="campaign-form-start-date"
-          :error="fieldError('start_date')"
+          :error="fieldError('startsAt')"
         >
           <AppDatePicker
             id="campaign-form-start-date"
-            v-model="form.start_date"
+            v-model="form.startsAt"
             placeholder="Select start date"
-            :invalid="v$.start_date.$error"
-            @closed="v$.start_date.$touch()"
+            :invalid="v$.startsAt.$error"
+            @closed="v$.startsAt.$touch()"
           />
         </AppInputContainer>
 
         <AppInputContainer
           label="End date"
           for="campaign-form-end-date"
-          :error="fieldError('end_date')"
+          :error="fieldError('endsAt')"
         >
           <AppDatePicker
             id="campaign-form-end-date"
-            v-model="form.end_date"
+            v-model="form.endsAt"
             placeholder="Select end date"
-            :min-date="form.start_date || undefined"
-            :invalid="v$.end_date.$error"
-            @closed="v$.end_date.$touch()"
+            :min-date="form.startsAt || undefined"
+            :invalid="v$.endsAt.$error"
+            @closed="v$.endsAt.$touch()"
           />
         </AppInputContainer>
-
-        <div class="md:col-span-2">
-          <AppInputContainer
-            label="Banner URL (optional)"
-            for="campaign-form-banner-url"
-            :error="fieldError('banner_url')"
-          >
-            <input
-              id="campaign-form-banner-url"
-              v-model.trim="form.banner_url"
-              type="url"
-              autocomplete="off"
-              placeholder="https://"
-              :aria-invalid="v$.banner_url.$error"
-              @blur="v$.banner_url.$touch()"
-            />
-          </AppInputContainer>
-        </div>
-
-        <div class="md:col-span-2">
-          <AppInputContainer
-            label="Description (optional)"
-            for="campaign-form-description"
-            :error="fieldError('description')"
-          >
-            <textarea
-              id="campaign-form-description"
-              v-model.trim="form.description"
-              rows="3"
-              placeholder="What is this campaign about?"
-              class="w-full resize-none bg-transparent outline-none"
-              @blur="v$.description.$touch()"
-            />
-          </AppInputContainer>
-        </div>
       </div>
 
       <div class="flex flex-col-reverse gap-3 pt-5 sm:flex-row sm:justify-end">

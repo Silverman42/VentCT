@@ -1,23 +1,32 @@
 <script setup lang="ts">
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
+import {
+  buildTimeframePresets,
+  formatCount,
+  formatUsd,
+  toApiDate,
+  type AnalyticsTimeframe,
+} from "~/utils/helpers/AnalyticsFormatters";
 import type { IAppMetric } from "~/utils/types/misc/Metric";
 import type {
   ITableBodyData,
   ITableHeaderData,
 } from "~/utils/types/misc/TableComponent";
 import type {
-  CampaignCountryFilter,
-  CampaignMetricKey,
-} from "../composables/useCampaignMockData";
-import type {
   CampaignAudienceStatusFilter,
+  CampaignSeriesPeriod,
   ICampaign,
+  ICampaignOverviewFilters,
 } from "../composables/useCampaignStore";
 import {
   formatCampaignDate,
   formatCampaignDateRange,
 } from "../utils/CampaignFormatters";
+import {
+  buildOverviewMetrics,
+  type CampaignMetricKey,
+} from "../utils/CampaignOverview";
 
 interface CampaignModalController {
   open: () => void | Promise<void>;
@@ -41,6 +50,12 @@ interface OverviewDateRange {
   start: string;
   end: string;
   custom?: boolean;
+}
+
+/** Template-ready country option; an empty code means all countries. */
+interface CountryOption {
+  code: string;
+  label: string;
 }
 
 /** Table-ready promoter row with formatted fallbacks. */
@@ -88,10 +103,26 @@ const {
   setCampaignAudiencesSearch,
   setCampaignAudiencesStatus,
   resetCampaignRelations,
+  canViewCampaignAnalytics,
+  overviewFilters,
+  campaignOverview,
+  fetchingCampaignOverview,
+  fetchCampaignOverview,
+  setCampaignOverviewFilters,
+  campaignTopPromoters,
+  fetchingCampaignTopPromoters,
+  fetchCampaignTopPromoters,
+  campaignSeriesPeriod,
+  campaignVerificationSeries,
+  fetchingCampaignVerificationSeries,
+  fetchCampaignVerificationSeries,
+  setCampaignSeriesPeriod,
+  campaignCountries,
+  fetchingCampaignCountries,
+  fetchCampaignCountries,
 } = useCampaignStore();
-const { campaignCountryOptions, getCampaignSampleInsights, getCampaignMetrics, getCampaignOverview } =
-  useCampaignMockData();
 
+const timeframePresets = buildTimeframePresets();
 const campaignFormModal = ref<CampaignFormModalController | null>(null);
 const deleteModal = ref<CampaignModalController | null>(null);
 const qrCodeModal = ref<CampaignModalController | null>(null);
@@ -99,22 +130,23 @@ const breakdownModal = ref<BreakdownModalController | null>(null);
 const actionsDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const countryDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const audienceDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
-const overviewCountry = ref<CampaignCountryFilter>("all");
-const overviewDateRange = ref<OverviewDateRange | null>(
-  createLastThirtyDaysRange(),
-);
+const overviewDateRange = ref<OverviewDateRange | null>(null);
 const promoterSearchInput = ref("");
 const audienceSearchInput = ref("");
 const hasLoaded = ref(false);
 const detailsFailed = ref(false);
 const promotersFailed = ref(false);
 const audiencesFailed = ref(false);
+const overviewFailed = ref(false);
+const topPromotersFailed = ref(false);
+const seriesFailed = ref(false);
 
 const AUDIENCE_FILTERS: CampaignAudienceStatusFilter[] = [
   "all",
   "verified",
   "unverified",
   "transacted",
+  "not_transacted",
 ];
 
 const promoterHeadings: ITableHeaderData[] = [
@@ -134,21 +166,26 @@ const audienceHeadings: ITableHeaderData[] = [
   { id: "status", name: "Status" },
 ];
 
-/** Builds the default "Last 30 days" overview window ending today. */
-function createLastThirtyDaysRange(): OverviewDateRange {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date(end);
-  start.setDate(start.getDate() - 29);
-  start.setHours(0, 0, 0, 0);
+/** Rebuilds the date dropdown selection from the stored overview filters. */
+const getRangeFromFilters = (
+  filters: ICampaignOverviewFilters,
+): OverviewDateRange | null => {
+  const { timeframe, startDate, endDate } = filters;
+  if (timeframe === "custom" && startDate && endDate) {
+    return {
+      key: "custom",
+      label: "Custom",
+      start: new Date(`${startDate}T00:00:00`).toISOString(),
+      end: new Date(`${endDate}T23:59:59`).toISOString(),
+      custom: true,
+    };
+  }
 
-  return {
-    key: "last30days",
-    label: "Last 30 days",
-    start: start.toISOString(),
-    end: end.toISOString(),
-  };
-}
+  const preset = timeframePresets.find((item) => item.key === timeframe);
+  return preset?.start && preset.end
+    ? { key: preset.key, label: preset.label, start: preset.start, end: preset.end }
+    : null;
+};
 
 /** Header view model for the loaded campaign, with explicit fallbacks. */
 const campaignView = computed(() => {
@@ -156,84 +193,111 @@ const campaignView = computed(() => {
   return {
     name: campaign?.name || "Untitled campaign",
     slug: campaign?.slug || "—",
+    referralCode: campaign?.referralCode || "—",
     status: campaign?.status ?? "pending",
-    target: (campaign?.target ?? 0).toLocaleString(),
-    description: campaign?.description?.trim() || "",
-    dates: formatCampaignDateRange(campaign?.start_date, campaign?.end_date),
+    target: formatCount(campaign?.target),
+    dates: formatCampaignDateRange(campaign?.startsAt, campaign?.endsAt),
   };
 });
 
-/** API-backed performance cards split into two rows. */
-const apiMetricRows = computed<IAppMetric[][]>(() => {
+/** All-time header cards; the financial row only shows when the API returns it. */
+const headerMetricRows = computed<IAppMetric[][]>(() => {
   const metrics = selectedCampaign.value?.metrics;
-  const format = (value: number | undefined) => (value ?? 0).toLocaleString();
-
-  return [
+  const rows: IAppMetric[][] = [
     [
       {
         label: "Promoters",
-        value: format(metrics?.total_promoters),
+        value: formatCount(metrics?.promotersCount),
         description: "Promoters assigned to this campaign",
       },
       {
         label: "Audience",
-        value: format(metrics?.total_audiences),
+        value: formatCount(metrics?.audienceCount),
         description: "People referred into this campaign",
       },
       {
         label: "Events",
-        value: format(metrics?.total_events),
+        value: formatCount(metrics?.eventsCount),
         description: "Events linked to this campaign",
       },
     ],
     [
       {
         label: "Verified Audience",
-        value: format(metrics?.verified_audiences),
+        value: formatCount(metrics?.verifiedAudienceCount),
         description: "Audience members who completed KYC",
       },
       {
         label: "Transacted Audience",
-        value: format(metrics?.transacted_audiences),
+        value: formatCount(metrics?.transactedAudienceCount),
         description: "Audience members who completed a trade",
       },
     ],
   ];
+
+  const hasFinancials =
+    metrics?.totalVolume !== null && metrics?.totalVolume !== undefined;
+  if (hasFinancials) {
+    rows.push([
+      {
+        label: "Total Transactions",
+        value: formatCount(metrics?.totalTransactions),
+        description: "All-time EasyPay and SafeWallet deposits",
+      },
+      {
+        label: "Total Volume",
+        value: formatUsd(metrics?.totalVolume),
+        description: "All-time transaction volume",
+      },
+      {
+        label: "EasyPay Volume",
+        value: formatUsd(metrics?.easypayVolume),
+        description: "All-time EasyPay payout volume",
+      },
+      {
+        label: "SafeWallet Volume",
+        value: formatUsd(metrics?.safewalletVolume),
+        description: "All-time SafeWallet deposit volume",
+      },
+    ]);
+  }
+
+  return rows;
 });
 
-/** Sample per-country overview rows narrowed by the country filter. */
-const overviewRows = computed(() =>
-  getCampaignOverview({
-    country: overviewCountry.value,
-    dateRange: overviewDateRange.value,
-  }),
-);
-
-/** Sample overview cards split into the two four-card rows of the design. */
+/** Overview cards for the active filters, split into the design's two rows. */
 const overviewMetricRows = computed<IAppMetric[][]>(() => {
-  const metrics: IAppMetric[] = getCampaignMetrics(overviewRows.value).map(
-    (metric) => ({ ...metric, actionable: Boolean(metric.key) }),
-  );
+  const metrics = buildOverviewMetrics(campaignOverview.value);
   return [metrics.slice(0, 4), metrics.slice(4)];
 });
 
-/** Sample top-promoter and performance data. */
-const sampleInsights = getCampaignSampleInsights();
+/** Country choices, with "All Country" first. */
+const countryOptions = computed<CountryOption[]>(() => [
+  { code: "", label: "All Country" },
+  ...campaignCountries.value.map((country) => ({
+    code: country.code,
+    label: country.name || country.code,
+  })),
+]);
 
 /** Label of the active country filter for the dropdown trigger. */
 const overviewCountryLabel = computed(
   () =>
-    campaignCountryOptions.find(
-      (option) => option.value === overviewCountry.value,
+    countryOptions.value.find(
+      (option) => option.code === (overviewFilters.value.countryCode ?? ""),
     )?.label ?? "All Country",
 );
 
-/** Promoter names keyed by id, used to label audience rows. */
-const promoterNames = computed(
+/** Whether top promoters should show the first-load shimmer. */
+const showTopPromotersShimmer = computed(
+  () => fetchingCampaignTopPromoters.value && !campaignTopPromoters.value,
+);
+
+/** Whether the chart should show the first-load shimmer. */
+const showSeriesShimmer = computed(
   () =>
-    new Map(
-      campaignPromoters.value.map((promoter) => [promoter.id, promoter.name]),
-    ),
+    fetchingCampaignVerificationSeries.value &&
+    !campaignVerificationSeries.value,
 );
 
 /** Promoter rows mapped from the API with explicit fallbacks. */
@@ -243,7 +307,7 @@ const promoterRows = computed<IPromoterRow[]>(() =>
     name: promoter.name || "—",
     email: promoter.email || "—",
     phone: promoter.phone || "—",
-    referralCode: promoter.referral_code || "—",
+    referralCode: promoter.referralCode || "—",
   })),
 );
 
@@ -252,22 +316,22 @@ const audienceRows = computed<IAudienceRow[]>(() =>
   campaignAudiences.value.map((member) => ({
     id: member.id,
     name: member.name || "—",
-    promoter:
-      (member.promoter_id && promoterNames.value.get(member.promoter_id)) ||
-      "—",
+    promoter: member.promoterName || "—",
     email: member.email || "—",
     phone: member.phone || "—",
-    hasTransacted: Boolean(member.has_transacted),
-    isVerified: Boolean(member.is_verified),
-    joined: formatCampaignDate(member.created_at),
+    hasTransacted: Boolean(member.hasTransacted),
+    isVerified: Boolean(member.isVerified),
+    joined: formatCampaignDate(member.createdAt),
   })),
 );
 
-/** Renders a concise text label for an audience status filter value. */
-const getAudienceFilterLabel = (filter: CampaignAudienceStatusFilter): string =>
-  `${filter.slice(0, 1).toUpperCase()}${filter.slice(1)}`;
+/** Renders a readable label for an audience status filter value, e.g. "Not transacted". */
+const getAudienceFilterLabel = (filter: CampaignAudienceStatusFilter): string => {
+  const text = filter.replace(/_/g, " ");
+  return `${text.slice(0, 1).toUpperCase()}${text.slice(1)}`;
+};
 
-/** Runs a related-table request and records whether it failed. */
+/** Runs a campaign-scoped request and records whether it failed. */
 const runRelationRequest = async (
   failed: Ref<boolean>,
   request: () => Promise<unknown>,
@@ -292,13 +356,47 @@ const loadAudiences = (page?: number): Promise<void> =>
     fetchCampaignAudiences(props.campaignId, page),
   );
 
-/** Loads the campaign, then its promoters and audience when it exists. */
+/** Reloads the overview cards for the current filters. */
+const loadOverview = (): Promise<void> =>
+  runRelationRequest(overviewFailed, () =>
+    fetchCampaignOverview(props.campaignId),
+  );
+
+/** Loads the top promoters by volume for the current filters. */
+const loadTopPromoters = (): Promise<void> =>
+  runRelationRequest(topPromotersFailed, () =>
+    fetchCampaignTopPromoters(props.campaignId),
+  );
+
+/** Loads the verification vs trade chart series. */
+const loadSeries = (): Promise<void> =>
+  runRelationRequest(seriesFailed, () =>
+    fetchCampaignVerificationSeries(props.campaignId),
+  );
+
+/** Loads the country filter options; on failure only "All Country" is offered. */
+const loadCountries = async (): Promise<void> => {
+  try {
+    await fetchCampaignCountries(props.campaignId);
+  } catch {
+    // The toast already reports it; the filter keeps "All Country".
+  }
+};
+
+/**
+ * Loads the campaign (with its overview), then its tables and, when the user
+ * may see analytics, the countries, top promoters and chart.
+ */
 const loadCampaign = async (): Promise<void> => {
   hasLoaded.value = false;
   detailsFailed.value = false;
+  overviewFailed.value = false;
+  topPromotersFailed.value = false;
+  seriesFailed.value = false;
   promoterSearchInput.value = "";
   audienceSearchInput.value = "";
   resetCampaignRelations();
+  overviewDateRange.value = getRangeFromFilters(overviewFilters.value);
 
   try {
     await fetchCampaignDetails(props.campaignId);
@@ -308,9 +406,24 @@ const loadCampaign = async (): Promise<void> => {
     hasLoaded.value = true;
   }
 
-  if (selectedCampaign.value) {
-    await Promise.all([loadPromoters(1), loadAudiences(1)]);
+  if (!selectedCampaign.value) return;
+
+  const requests: Promise<void>[] = [loadPromoters(1), loadAudiences(1)];
+  if (canViewCampaignAnalytics.value) {
+    requests.push(loadCountries(), loadTopPromoters(), loadSeries());
   }
+  await Promise.all(requests);
+};
+
+/** Applies new overview filters and refreshes the analytics that depend on them. */
+const applyOverviewFilters = (
+  partial: Partial<ICampaignOverviewFilters>,
+  includeSeries = false,
+): void => {
+  setCampaignOverviewFilters(partial);
+  void loadOverview();
+  void loadTopPromoters();
+  if (includeSeries) void loadSeries();
 };
 
 /** Searches promoters once the user pauses typing. */
@@ -335,6 +448,13 @@ const selectAudienceFilter = (filter: CampaignAudienceStatusFilter) => {
   );
 };
 
+/** Changes the chart period and reloads the series. */
+const selectSeriesPeriod = (period: CampaignSeriesPeriod): void => {
+  void runRelationRequest(seriesFailed, () =>
+    setCampaignSeriesPeriod(props.campaignId, period),
+  );
+};
+
 /** Opens the edit form prefilled with the loaded campaign. */
 const openEditCampaignModal = (): void => {
   actionsDropdown.value?.closeDropdown();
@@ -355,10 +475,11 @@ const openDeleteModal = (): void => {
   void deleteModal.value?.open();
 };
 
-/** Applies the overview country filter and closes its menu. */
-const selectOverviewCountry = (country: CampaignCountryFilter): void => {
-  overviewCountry.value = country;
+/** Applies the overview country filter (also used by the chart) and closes its menu. */
+const selectOverviewCountry = (code: string): void => {
   countryDropdown.value?.closeDropdown();
+  if ((overviewFilters.value.countryCode ?? "") === code) return;
+  applyOverviewFilters({ countryCode: code || undefined }, true);
 };
 
 /** Opens the breakdown modal for an actionable overview card. */
@@ -367,6 +488,19 @@ const openMetricBreakdown = (metric: IAppMetric): void => {
   breakdownModal.value?.open(metric.key as CampaignMetricKey);
 };
 
+watch(overviewDateRange, (range, previous) => {
+  if (!range || !previous || !selectedCampaign.value) return;
+  if (range.custom) {
+    applyOverviewFilters({
+      timeframe: "custom",
+      startDate: toApiDate(range.start),
+      endDate: toApiDate(range.end),
+    });
+    return;
+  }
+  if (range.key === overviewFilters.value.timeframe) return;
+  applyOverviewFilters({ timeframe: range.key as AnalyticsTimeframe });
+});
 watch(promoterSearchInput, (term, previous) => {
   if (term.trim() !== previous.trim()) updatePromoterSearch(term);
 });
@@ -377,7 +511,10 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
 </script>
 
 <template>
-  <CampaignDetailShimmer v-if="!hasLoaded" />
+  <CampaignDetailShimmer
+    v-if="!hasLoaded"
+    :show-analytics="canViewCampaignAnalytics"
+  />
 
   <section
     v-else-if="detailsFailed"
@@ -423,14 +560,9 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
           {{ campaignView.name }}
         </h2>
         <p class="mt-1 text-xs text-dashboard-text">
-          Target - {{ campaignView.target }} &nbsp; Slug -
-          {{ campaignView.slug }} &nbsp; {{ campaignView.dates }}
-        </p>
-        <p
-          v-if="campaignView.description"
-          class="mt-1 max-w-2xl text-sm text-dashboard-text"
-        >
-          {{ campaignView.description }}
+          Target - {{ campaignView.target }} &nbsp; Referral code -
+          {{ campaignView.referralCode }} &nbsp; Slug - {{ campaignView.slug }}
+          &nbsp; {{ campaignView.dates }}
         </p>
         <CampaignStatusPill class="mt-2 text-xs" :status="campaignView.status" />
       </div>
@@ -480,65 +612,95 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
       </AppDropdown>
     </section>
 
-    <AppMetricRows :rows="apiMetricRows" aria-label="Campaign performance metrics" />
-
-    <section
-      class="flex flex-wrap items-center justify-between gap-2 border-b border-dashboard-card-border pb-5"
-      aria-label="Campaign overview filters"
-    >
-      <p class="text-xs text-dashboard-text">
-        Overview, breakdown, top promoters and chart show sample data.
-      </p>
-      <div class="flex flex-wrap items-center gap-2">
-        <AppDateTimeDropdown
-          v-model="overviewDateRange"
-          button-class="!rounded-lg !px-3 !py-2 !font-normal"
-        />
-        <AppDropdown
-          ref="countryDropdown"
-          position="right"
-          :width-is-finite="false"
-        >
-          <template #default>
-            <button
-              type="button"
-              class="inline-flex items-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg-darker px-3 py-3 text-sm text-dashboard-heading transition hover:border-brand-color-default"
-            >
-              <Icon name="vent:global" size="1rem" />
-              {{ overviewCountryLabel }}
-              <Icon name="vent:arrow-down" size="0.9rem" />
-            </button>
-          </template>
-          <template #dropdown_body>
-            <div class="min-w-38 space-y-1">
-              <button
-                v-for="option in campaignCountryOptions"
-                :key="option.value"
-                type="button"
-                class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                :class="{
-                  'bg-dashboard-bg-dark': overviewCountry === option.value,
-                }"
-                @click="selectOverviewCountry(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-          </template>
-        </AppDropdown>
-      </div>
-    </section>
-
     <AppMetricRows
-      :rows="overviewMetricRows"
-      aria-label="Campaign overview metrics"
-      @select="openMetricBreakdown"
+      :rows="headerMetricRows"
+      aria-label="Campaign all-time metrics"
     />
+
+    <template v-if="canViewCampaignAnalytics">
+      <section
+        class="flex flex-wrap items-center justify-between gap-2 border-b border-dashboard-card-border pb-5"
+        aria-label="Campaign overview filters"
+      >
+        <p class="text-xs text-dashboard-text">
+          Period and country apply to the overview and top promoters; country
+          also applies to the chart.
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <AppDateTimeDropdown
+            v-model="overviewDateRange"
+            :presets="timeframePresets"
+            show-preset-label
+            button-class="!rounded-lg !px-3 !py-2 !font-normal"
+          />
+          <AppDropdown
+            ref="countryDropdown"
+            position="right"
+            :width-is-finite="false"
+          >
+            <template #default>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg-darker px-3 py-3 text-sm text-dashboard-heading transition hover:border-brand-color-default"
+                :aria-busy="fetchingCampaignCountries"
+              >
+                <Icon name="vent:global" size="1rem" />
+                {{ overviewCountryLabel }}
+                <Icon name="vent:arrow-down" size="0.9rem" />
+              </button>
+            </template>
+            <template #dropdown_body>
+              <div class="min-w-38 space-y-1">
+                <button
+                  v-for="option in countryOptions"
+                  :key="option.code || 'all'"
+                  type="button"
+                  class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                  :class="{
+                    'bg-dashboard-bg-dark':
+                      (overviewFilters.countryCode ?? '') === option.code,
+                  }"
+                  @click="selectOverviewCountry(option.code)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+            </template>
+          </AppDropdown>
+        </div>
+      </section>
+
+      <AppMetricRowsShimmer
+        v-if="fetchingCampaignOverview"
+        :rows="[4, 4]"
+      />
+      <AppErrorState
+        v-else-if="overviewFailed"
+        heading="We couldn't load the overview"
+        description="Check your connection and try again."
+        @retry="loadOverview"
+      />
+      <AppMetricRows
+        v-else
+        :rows="overviewMetricRows"
+        aria-label="Campaign overview metrics"
+        @select="openMetricBreakdown"
+      />
+    </template>
+
+    <p
+      v-else
+      class="rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-4 py-3 text-sm text-dashboard-text"
+    >
+      Financial overview, top promoters and performance charts need the
+      dashboard analytics permission.
+    </p>
 
     <section class="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <section
         v-if="promotersFailed"
-        class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center xl:col-span-7"
+        class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
+        :class="canViewCampaignAnalytics ? 'xl:col-span-7' : 'xl:col-span-12'"
       >
         <h3 class="text-lg font-medium text-dashboard-heading">
           We couldn't load promoters
@@ -550,7 +712,7 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
 
       <TableComponent
         v-else
-        class="xl:col-span-7"
+        :class="canViewCampaignAnalytics ? 'xl:col-span-7' : 'xl:col-span-12'"
         :headings="promoterHeadings"
         :body="promoterRows"
         :is-loading="fetchingCampaignPromoters"
@@ -575,11 +737,20 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
         </template>
       </TableComponent>
 
-      <CampaignTopPromoters
-        class="xl:col-span-5"
-        :total-volume="sampleInsights.totalVolume"
-        :promoters="sampleInsights.topPromoters"
-      />
+      <template v-if="canViewCampaignAnalytics">
+        <CampaignTopPromotersShimmer
+          v-if="showTopPromotersShimmer"
+          class="xl:col-span-5"
+        />
+        <CampaignTopPromoters
+          v-else
+          class="xl:col-span-5"
+          :data="campaignTopPromoters"
+          :loading="fetchingCampaignTopPromoters"
+          :failed="topPromotersFailed"
+          @retry="loadTopPromoters"
+        />
+      </template>
     </section>
 
     <section
@@ -670,7 +841,18 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
       </template>
     </TableComponent>
 
-    <CampaignPerformanceChart :performance="sampleInsights.performance" />
+    <template v-if="canViewCampaignAnalytics">
+      <CampaignPerformanceChartShimmer v-if="showSeriesShimmer" />
+      <CampaignPerformanceChart
+        v-else
+        :period="campaignSeriesPeriod"
+        :data="campaignVerificationSeries"
+        :loading="fetchingCampaignVerificationSeries"
+        :failed="seriesFailed"
+        @update:period="selectSeriesPeriod"
+        @retry="loadSeries"
+      />
+    </template>
 
     <CampaignNewModal ref="campaignFormModal" />
     <CampaignDeleteModal
@@ -679,6 +861,9 @@ watch(() => props.campaignId, loadCampaign, { immediate: true });
       redirect-on-delete
     />
     <CampaignQrCodeModal ref="qrCodeModal" :campaign="selectedCampaign" />
-    <CampaignMetricBreakdownModal ref="breakdownModal" :rows="overviewRows" />
+    <CampaignMetricBreakdownModal
+      ref="breakdownModal"
+      :breakdown="campaignOverview?.breakdown ?? null"
+    />
   </div>
 </template>

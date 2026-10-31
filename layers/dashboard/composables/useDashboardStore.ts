@@ -1,24 +1,18 @@
 import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
+import type {
+  AnalyticsSeriesUnit,
+  AnalyticsTimeframe,
+} from "~/utils/helpers/AnalyticsFormatters";
 import type { IResponse } from "~/utils/types/misc/ResponseBody";
 
 /** Reporting window accepted by the dashboard analytics endpoints. */
-export type DashboardTimeframe =
-  | "all_time"
-  | "today"
-  | "this_week"
-  | "this_month"
-  | "this_year"
-  | "last_7_days"
-  | "last_30_days"
-  | "last_90_days"
-  | "last_12_months"
-  | "custom";
+export type DashboardTimeframe = AnalyticsTimeframe;
 
 /** Rolling chart window accepted by the dashboard series endpoints. */
 export type DashboardSeriesPeriod = "1d" | "1w" | "2w" | "1m" | "90d" | "12m";
 
 /** Bucket size returned with a chart series. */
-export type DashboardSeriesUnit = "hour" | "day" | "month";
+export type DashboardSeriesUnit = AnalyticsSeriesUnit;
 
 /** Campaign lifecycle status reported by the analytics endpoints. */
 export type DashboardCampaignStatus = "running" | "pending" | "closed";

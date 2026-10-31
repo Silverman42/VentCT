@@ -1,3 +1,7 @@
+import type {
+  AnalyticsSeriesUnit,
+  AnalyticsTimeframe,
+} from "~/utils/helpers/AnalyticsFormatters";
 import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
 import { downloadResponseFile } from "~/utils/helpers/FileDownload";
 import { resolveLastPage } from "~/utils/helpers/Pagination";
@@ -28,47 +32,141 @@ export type CampaignAudienceStatusFilter =
   | "all"
   | "verified"
   | "unverified"
-  | "transacted";
+  | "transacted"
+  | "not_transacted";
 
-/** Campaign record returned by the campaigns list endpoint. */
+/** Campaign record (CampaignResource) returned by the list, create and update endpoints. */
 export interface ICampaign extends ITableBodyData {
   id: string;
   name: string;
-  slug: string;
-  description?: string | null;
-  status: CampaignApiStatus;
+  slug: string | null;
   target: number;
+  referralCode: string;
+  status: CampaignApiStatus;
+  statusLabel?: string;
   /** Formatted as `YYYY-MM-DD`. */
-  start_date?: string;
+  startsAt: string | null;
   /** Formatted as `YYYY-MM-DD`. */
-  end_date?: string;
-  banner_url?: string | null;
-  promoters_count?: number;
-  audiences_count?: number;
-  created_at?: string;
-  updated_at?: string;
+  endsAt: string | null;
+  promotersCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-/** Performance metrics returned with the campaign detail endpoint. */
-export interface ICampaignMetrics {
-  total_promoters: number;
-  total_audiences: number;
-  verified_audiences: number;
-  transacted_audiences: number;
-  total_events: number;
+/** All-time header metrics of the campaign detail endpoint. Financial fields are `null` without `dashboard.basic.view`. */
+export interface ICampaignDetailMetrics {
+  promotersCount: number;
+  audienceCount: number;
+  eventsCount: number;
+  verifiedAudienceCount: number;
+  transactedAudienceCount: number;
+  totalTransactions: number | null;
+  successfulTransactions: number | null;
+  easypayVolume: number | null;
+  safewalletVolume: number | null;
+  totalVolume: number | null;
 }
 
-/** Campaign record returned by the campaign detail endpoint. */
+/** USD volume (2 dp) and row count for one ledger slice. */
+export interface IVolumeCount {
+  volume: number;
+  count: number;
+}
+
+/** Ledger breakdown behind the campaign overview cards. */
+export interface ICampaignOverviewBreakdown {
+  transactions: IVolumeCount & {
+    easypay: IVolumeCount;
+    safewallet: IVolumeCount & { cash: IVolumeCount; crypto: IVolumeCount };
+  };
+  deposits: IVolumeCount;
+  withdrawals: IVolumeCount & { cash: IVolumeCount; crypto: IVolumeCount };
+  utility: IVolumeCount & { airtime: IVolumeCount; data: IVolumeCount };
+  lastTransactionAt: string | null;
+}
+
+/** Overview figures for the selected timeframe and country. */
+export interface ICampaignOverview {
+  promoters: number;
+  audience: number;
+  transactionCount: number;
+  depositCount: number;
+  transactionVolume: number;
+  depositVolume: number;
+  utilityCount: number;
+  withdrawCount: number;
+  breakdown: ICampaignOverviewBreakdown;
+}
+
+/** Response data of `GET /admin/campaigns/{id}`. */
 export interface ICampaignDetails extends ICampaign {
-  metrics?: ICampaignMetrics;
+  metrics: ICampaignDetailMetrics;
+  /** `null` when the user lacks `dashboard.basic.view`. */
+  overview: ICampaignOverview | null;
+  promoters?: ICampaignPromoter[];
+}
+
+/** Filters applied to the campaign overview, top promoters and countries. */
+export interface ICampaignOverviewFilters {
+  timeframe: AnalyticsTimeframe;
+  /** `YYYY-MM-DD`; only sent when `timeframe` is `custom`. */
+  startDate?: string;
+  /** `YYYY-MM-DD`; only sent when `timeframe` is `custom`. */
+  endDate?: string;
+  /** ISO alpha-2 country code; empty means all countries. */
+  countryCode?: string;
+}
+
+/** Chart window accepted by the verification vs trade series endpoint. */
+export type CampaignSeriesPeriod = "7d" | "30d" | "90d" | "12m";
+
+/** One promoter's share of the campaign's deposit volume. */
+export interface ICampaignTopPromoter {
+  id: string;
+  name: string;
+  volume: number;
+  share: number;
+}
+
+/** Response data of `GET /admin/dashboard/top-promoters?campaignId=`. */
+export interface ICampaignTopPromoters {
+  totalVolume: number;
+  unattributedVolume: number;
+  promoters: ICampaignTopPromoter[];
+}
+
+/** One bucket of the verification vs trade chart. */
+export interface ICampaignVerificationPoint {
+  bucket: string;
+  verifiedUsers: number;
+  tradedUsers: number;
+}
+
+/** Response data of `GET /admin/dashboard/verification-trade-series?campaignId=`. */
+export interface ICampaignVerificationSeries {
+  period: string;
+  unit: AnalyticsSeriesUnit;
+  series: ICampaignVerificationPoint[];
+}
+
+/** A country with registered audiences, used by the overview country filter. */
+export interface ICampaignCountry {
+  code: string;
+  name: string;
+  audienceCount: number;
+}
+
+/** Response data of `GET /admin/dashboard/countries?campaignId=`. */
+export interface ICampaignCountriesResponse {
+  countries: ICampaignCountry[];
 }
 
 /** Campaign counts by status returned with the campaigns list. */
 export interface ICampaignSummary {
-  total_campaigns: number;
-  running_count: number;
-  pending_count: number;
-  closed_count: number;
+  all: number;
+  running: number;
+  pending: number;
+  closed: number;
 }
 
 /** Response data of the campaigns list endpoint. */
@@ -80,14 +178,14 @@ export interface ICampaignListResponse {
 /** Payload for creating a campaign. */
 export interface ICreateCampaignPayload {
   name: string;
-  description?: string;
-  status: CampaignApiStatus;
-  target: number;
+  referralCode: string;
+  target?: number;
+  status?: CampaignApiStatus;
+  slug?: string | null;
   /** Formatted as `YYYY-MM-DD`. */
-  start_date: string;
+  startsAt?: string | null;
   /** Formatted as `YYYY-MM-DD`. */
-  end_date: string;
-  banner_url?: string;
+  endsAt?: string | null;
 }
 
 /** Payload for updating a campaign; every field is optional. */
@@ -95,37 +193,37 @@ export type IUpdateCampaignPayload = Partial<ICreateCampaignPayload>;
 
 /** Payload for deleting several campaigns at once. */
 export interface IBatchDeleteCampaignsPayload {
-  campaign_ids: string[];
+  ids: string[];
 }
 
 /** Response data of the batch delete endpoint. */
 export interface IBatchDeleteCampaignsResponse {
-  deleted_count: number;
+  deletedCount: number;
 }
 
 /** Promoter record returned by the promoters list endpoint. */
 export interface ICampaignPromoter extends ITableBodyData {
   id: string;
-  campaign_id?: string;
-  campaign_name?: string;
+  campaignId?: string;
+  campaignName?: string;
   name: string;
   email: string;
   phone?: string | null;
-  referral_code: string;
-  app_referral_link?: string;
-  web_referral_link?: string;
-  avatar_url?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  referralCode: string;
+  appReferralLink?: string;
+  webReferralLink?: string;
+  avatarUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** Promoter summary returned with the promoters list. */
 export interface ICampaignPromoterSummary {
-  total_promoters: number;
-  total_audience: number;
-  verified_users: number;
-  completed_trades: number;
-  conversion_rate: number;
+  totalPromoters: number;
+  totalAudience: number;
+  verifiedUsers: number;
+  completedTrades: number;
+  conversionRate: number;
 }
 
 /** Response data of the promoters list endpoint. */
@@ -137,24 +235,34 @@ export interface ICampaignPromoterListResponse {
 /** Audience record returned by the audiences list endpoint. */
 export interface ICampaignAudience extends ITableBodyData {
   id: string;
-  campaign_id?: string;
-  promoter_id?: string | null;
+  campaignId?: string;
+  campaignName?: string;
+  promoterId?: string | null;
+  promoterName?: string | null;
   name: string;
   email: string;
   phone?: string | null;
-  is_verified: boolean;
-  has_transacted: boolean;
-  verified_at?: string | null;
-  first_trade_at?: string | null;
-  created_at?: string;
+  isVerified: boolean;
+  hasTransacted: boolean;
+  status?: string;
+  statusLabel?: string;
+  kycLevel?: number | null;
+  countryCode?: string | null;
+  verifiedAt?: string | null;
+  firstTradeAt?: string | null;
+  createdAt?: string;
 }
 
 /** Audience summary returned with the audiences list. */
 export interface ICampaignAudienceSummary {
-  total_audiences: number;
-  verified_count: number;
-  transacted_count: number;
-  unverified_count: number;
+  registeredTotal: number;
+  verifiedTotal: number;
+  withTransactionTotal: number;
+  unverifiedTotal: number;
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+  thisYear: number;
 }
 
 /** Response data of the audiences list endpoint. */
@@ -162,6 +270,27 @@ export interface ICampaignAudienceListResponse {
   summary: ICampaignAudienceSummary;
   audiences: ICampaignAudience[];
 }
+
+/** Query parameters accepted by the overview-filtered analytics endpoints. */
+type CampaignAnalyticsQuery = Record<string, string | number | undefined>;
+
+/**
+ * Turns overview filters into query parameters, sending the date range only
+ * for a custom timeframe and dropping an empty country.
+ */
+const buildOverviewQuery = (
+  filters: ICampaignOverviewFilters,
+): CampaignAnalyticsQuery => {
+  const query: CampaignAnalyticsQuery = { timeframe: filters.timeframe };
+
+  if (filters.timeframe === "custom" && filters.startDate && filters.endDate) {
+    query.startDate = filters.startDate;
+    query.endDate = filters.endDate;
+  }
+  if (filters.countryCode) query.countryCode = filters.countryCode;
+
+  return query;
+};
 
 /** Returns true when an API error is a 404 Not Found. */
 const isNotFoundError = (error: unknown): boolean =>
@@ -186,6 +315,9 @@ export const useCampaignStore = () => {
     EXPORT: "/admin/campaigns/export",
     PROMOTERS: "/admin/promoters",
     AUDIENCES: "/admin/audiences",
+    TOP_PROMOTERS: "/admin/dashboard/top-promoters",
+    VERIFICATION_SERIES: "/admin/dashboard/verification-trade-series",
+    COUNTRIES: "/admin/dashboard/countries",
   };
 
   const state = {
@@ -319,16 +451,63 @@ export const useCampaignStore = () => {
       "useCampaignStore.campaignAudiencesStatus",
       () => "all",
     ),
+
+    overviewFilters: useState<ICampaignOverviewFilters>(
+      "useCampaignStore.overviewFilters",
+      () => ({ timeframe: "last_30_days" }),
+    ),
+    fetchingCampaignOverview: useState<boolean>(
+      "useCampaignStore.fetchingCampaignOverview",
+      () => false,
+    ),
+    campaignOverview: useState<ICampaignOverview | null>(
+      "useCampaignStore.campaignOverview",
+      () => null,
+    ),
+    fetchingCampaignTopPromoters: useState<boolean>(
+      "useCampaignStore.fetchingCampaignTopPromoters",
+      () => false,
+    ),
+    campaignTopPromoters: useState<ICampaignTopPromoters | null>(
+      "useCampaignStore.campaignTopPromoters",
+      () => null,
+    ),
+    campaignSeriesPeriod: useState<CampaignSeriesPeriod>(
+      "useCampaignStore.campaignSeriesPeriod",
+      () => "7d",
+    ),
+    fetchingCampaignVerificationSeries: useState<boolean>(
+      "useCampaignStore.fetchingCampaignVerificationSeries",
+      () => false,
+    ),
+    campaignVerificationSeries: useState<ICampaignVerificationSeries | null>(
+      "useCampaignStore.campaignVerificationSeries",
+      () => null,
+    ),
+    fetchingCampaignCountries: useState<boolean>(
+      "useCampaignStore.fetchingCampaignCountries",
+      () => false,
+    ),
+    campaignCountries: useState<ICampaignCountry[]>(
+      "useCampaignStore.campaignCountries",
+      () => [],
+    ),
   };
+
+  const { can } = useAuthStore();
 
   const getters = {
     /** Campaign counts per status for the index summary cards. */
     campaignStats: computed(() => ({
-      total: state.campaignSummary.value?.total_campaigns ?? 0,
-      pending: state.campaignSummary.value?.pending_count ?? 0,
-      running: state.campaignSummary.value?.running_count ?? 0,
-      closed: state.campaignSummary.value?.closed_count ?? 0,
+      total: state.campaignSummary.value?.all ?? 0,
+      pending: state.campaignSummary.value?.pending ?? 0,
+      running: state.campaignSummary.value?.running ?? 0,
+      closed: state.campaignSummary.value?.closed ?? 0,
     })),
+    /** Whether the user may load the financial overview, top promoters and chart. */
+    canViewCampaignAnalytics: computed<boolean>(() =>
+      can("dashboard.basic.view"),
+    ),
   };
 
   /** Applies updated campaign fields to the selected campaign and the list. */
@@ -354,7 +533,7 @@ export const useCampaignStore = () => {
           method: "GET",
           query: {
             page: 1,
-            per_page: 100,
+            perPage: 100,
             search: search.trim() || undefined,
           },
         })
@@ -388,7 +567,7 @@ export const useCampaignStore = () => {
             method: "GET",
             query: {
               page,
-              per_page: state.campaignsPerPage.value,
+              perPage: state.campaignsPerPage.value,
               search: state.campaignsSearch.value || undefined,
               status:
                 state.campaignsStatus.value === "all"
@@ -409,7 +588,7 @@ export const useCampaignStore = () => {
           state.campaigns.value = campaigns;
           state.campaignsTotal.value = response.meta?.total ?? campaigns.length;
           state.campaignsLastPage.value = resolveLastPage(response.meta);
-          state.campaignsPage.value = response.meta?.current_page ?? page;
+          state.campaignsPage.value = response.meta?.currentPage ?? page;
           return campaigns;
         })
         .catch((error) => {
@@ -435,8 +614,9 @@ export const useCampaignStore = () => {
     },
 
     /**
-     * Loads one campaign with its metrics into `selectedCampaign`.
-     * Resolves to `null` without a toast when the campaign does not exist.
+     * Loads one campaign with its all-time metrics into `selectedCampaign` and
+     * its filtered overview into `campaignOverview`, using the stored overview
+     * filters. Resolves to `null` without a toast when the campaign does not exist.
      */
     async fetchCampaignDetails(campaignId: string) {
       state.fetchingCampaignDetails.value = true;
@@ -444,20 +624,157 @@ export const useCampaignStore = () => {
       return useApiClientHandler()
         .$apiClient<IResponse<ICampaignDetails>>(
           endpoints.CAMPAIGN(campaignId),
-          { method: "GET" },
+          {
+            method: "GET",
+            query: buildOverviewQuery(state.overviewFilters.value),
+          },
         )
         .then((response) => {
           state.selectedCampaign.value = response.data ?? null;
+          state.campaignOverview.value = response.data?.overview ?? null;
           return state.selectedCampaign.value;
         })
         .catch((error) => {
           state.selectedCampaign.value = null;
+          state.campaignOverview.value = null;
           if (isNotFoundError(error)) return null;
           handleApiError(error, "Campaign detail fetch failed");
           throw error;
         })
         .finally(() => {
           state.fetchingCampaignDetails.value = false;
+        });
+    },
+
+    /**
+     * Re-fetches the campaign detail with the current overview filters and
+     * updates only `campaignOverview`, so the header and tables stay in place.
+     */
+    async fetchCampaignOverview(campaignId: string) {
+      state.fetchingCampaignOverview.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<ICampaignDetails>>(
+          endpoints.CAMPAIGN(campaignId),
+          {
+            method: "GET",
+            query: buildOverviewQuery(state.overviewFilters.value),
+          },
+        )
+        .then((response) => {
+          state.campaignOverview.value = response.data?.overview ?? null;
+          return state.campaignOverview.value;
+        })
+        .catch((error) => {
+          handleApiError(error, "Campaign overview fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingCampaignOverview.value = false;
+        });
+    },
+
+    /**
+     * Merges new overview filters (dates are dropped unless the timeframe is
+     * `custom`). Callers then refresh the overview and top promoters.
+     */
+    setCampaignOverviewFilters(partial: Partial<ICampaignOverviewFilters>) {
+      const next = { ...state.overviewFilters.value, ...partial };
+      if (next.timeframe !== "custom") {
+        delete next.startDate;
+        delete next.endDate;
+      }
+      if (!next.countryCode) delete next.countryCode;
+      state.overviewFilters.value = next;
+      return next;
+    },
+
+    /** Fetches the campaign's promoters ranked by deposit volume for the overview filters. */
+    async fetchCampaignTopPromoters(campaignId: string, limit = 7) {
+      state.fetchingCampaignTopPromoters.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<ICampaignTopPromoters>>(endpoints.TOP_PROMOTERS, {
+          method: "GET",
+          query: {
+            ...buildOverviewQuery(state.overviewFilters.value),
+            campaignId,
+            limit,
+          },
+        })
+        .then((response) => {
+          state.campaignTopPromoters.value = response.data ?? null;
+          return state.campaignTopPromoters.value;
+        })
+        .catch((error) => {
+          handleApiError(error, "Top promoters fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingCampaignTopPromoters.value = false;
+        });
+    },
+
+    /**
+     * Fetches the verification vs trade chart series for the campaign, using
+     * the stored chart period and the overview country filter.
+     */
+    async fetchCampaignVerificationSeries(campaignId: string) {
+      state.fetchingCampaignVerificationSeries.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<ICampaignVerificationSeries>>(
+          endpoints.VERIFICATION_SERIES,
+          {
+            method: "GET",
+            query: {
+              period: state.campaignSeriesPeriod.value,
+              campaignId,
+              countryCode: state.overviewFilters.value.countryCode || undefined,
+            },
+          },
+        )
+        .then((response) => {
+          state.campaignVerificationSeries.value = response.data ?? null;
+          return state.campaignVerificationSeries.value;
+        })
+        .catch((error) => {
+          handleApiError(error, "Performance chart fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingCampaignVerificationSeries.value = false;
+        });
+    },
+
+    /** Changes the chart period and reloads the verification vs trade series. */
+    async setCampaignSeriesPeriod(
+      campaignId: string,
+      period: CampaignSeriesPeriod,
+    ) {
+      state.campaignSeriesPeriod.value = period;
+      return actions.fetchCampaignVerificationSeries(campaignId);
+    },
+
+    /** Fetches the countries that have audiences in this campaign, for the country filter. */
+    async fetchCampaignCountries(campaignId: string) {
+      state.fetchingCampaignCountries.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<ICampaignCountriesResponse>>(endpoints.COUNTRIES, {
+          method: "GET",
+          query: { campaignId },
+        })
+        .then((response) => {
+          state.campaignCountries.value = response.data?.countries ?? [];
+          return state.campaignCountries.value;
+        })
+        .catch((error) => {
+          handleApiError(error, "Country list fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingCampaignCountries.value = false;
         });
     },
 
@@ -559,7 +876,7 @@ export const useCampaignStore = () => {
     async batchDeleteCampaigns(campaignIds: string[]) {
       state.batchDeletingCampaigns.value = true;
       const payload: IBatchDeleteCampaignsPayload = {
-        campaign_ids: campaignIds,
+        ids: campaignIds,
       };
 
       return useApiClientHandler()
@@ -568,7 +885,7 @@ export const useCampaignStore = () => {
           { method: "POST", body: payload },
         )
         .then((response) => {
-          const deletedCount = response.data?.deleted_count ?? campaignIds.length;
+          const deletedCount = response.data?.deletedCount ?? campaignIds.length;
           useToastHandler().triggerToast(
             `${deletedCount} campaign${deletedCount === 1 ? "" : "s"} deleted successfully.`,
             "success",
@@ -650,8 +967,8 @@ export const useCampaignStore = () => {
           method: "GET",
           query: {
             page,
-            per_page: state.campaignPromotersPerPage.value,
-            campaign_id: campaignId,
+            perPage: state.campaignPromotersPerPage.value,
+            campaignId,
             search: state.campaignPromotersSearch.value || undefined,
           },
         })
@@ -669,7 +986,7 @@ export const useCampaignStore = () => {
             response.meta,
           );
           state.campaignPromotersPage.value =
-            response.meta?.current_page ?? page;
+            response.meta?.currentPage ?? page;
           return promoters;
         })
         .catch((error) => {
@@ -708,8 +1025,8 @@ export const useCampaignStore = () => {
           method: "GET",
           query: {
             page,
-            per_page: state.campaignAudiencesPerPage.value,
-            campaign_id: campaignId,
+            perPage: state.campaignAudiencesPerPage.value,
+            campaignId,
             search: state.campaignAudiencesSearch.value || undefined,
             status:
               state.campaignAudiencesStatus.value === "all"
@@ -731,7 +1048,7 @@ export const useCampaignStore = () => {
             response.meta,
           );
           state.campaignAudiencesPage.value =
-            response.meta?.current_page ?? page;
+            response.meta?.currentPage ?? page;
           return audiences;
         })
         .catch((error) => {
@@ -759,7 +1076,10 @@ export const useCampaignStore = () => {
       return actions.fetchCampaignAudiences(campaignId, 1);
     },
 
-    /** Clears campaign-scoped promoter and audience tables between campaigns. */
+    /**
+     * Clears campaign-scoped tables and analytics between campaigns, and
+     * resets the overview filters to the default "Last 30 days".
+     */
     resetCampaignRelations() {
       state.campaignPromoters.value = [];
       state.campaignPromotersPage.value = 1;
@@ -772,6 +1092,12 @@ export const useCampaignStore = () => {
       state.campaignAudiencesLastPage.value = 1;
       state.campaignAudiencesSearch.value = "";
       state.campaignAudiencesStatus.value = "all";
+      state.overviewFilters.value = { timeframe: "last_30_days" };
+      state.campaignOverview.value = null;
+      state.campaignTopPromoters.value = null;
+      state.campaignSeriesPeriod.value = "7d";
+      state.campaignVerificationSeries.value = null;
+      state.campaignCountries.value = [];
     },
   };
 

@@ -21,7 +21,7 @@ interface ICampaignRow extends ITableBodyData {
   target: string;
   dates: string;
   promoters: string;
-  audiences: string;
+  referralCode: string;
 }
 
 const {
@@ -51,7 +51,7 @@ const tableHeadings: ITableHeaderData[] = [
   { id: "dates", name: "Duration", width: "22%" },
   { id: "target", name: "Target", width: "12%" },
   { id: "promoters", name: "Promoters", width: "12%" },
-  { id: "audiences", name: "Audience", width: "12%" },
+  { id: "referralCode", name: "Referral Code", width: "12%" },
   { id: "status", name: "Status", width: "12%" },
 ];
 
@@ -103,9 +103,9 @@ const campaignRows = computed<ICampaignRow[]>(() =>
     name: campaign.name || "Untitled campaign",
     status: campaign.status,
     target: (campaign.target ?? 0).toLocaleString(),
-    dates: formatCampaignDateRange(campaign.start_date, campaign.end_date),
-    promoters: (campaign.promoters_count ?? 0).toLocaleString(),
-    audiences: (campaign.audiences_count ?? 0).toLocaleString(),
+    dates: formatCampaignDateRange(campaign.startsAt, campaign.endsAt),
+    promoters: (campaign.promotersCount ?? 0).toLocaleString(),
+    referralCode: campaign.referralCode || "—",
   })),
 );
 

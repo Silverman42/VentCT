@@ -59,11 +59,14 @@ export interface IResponseMeta {
 }
 
 /** Pagination meta returned with paginated list responses. */
+/** Pagination meta returned with paginated lists (camelCase per the API reference). */
 export interface IPaginationMeta {
-  current_page: number;
-  per_page: number;
+  currentPage: number;
+  perPage: number;
   total: number;
-  last_page?: number;
+  lastPage?: number;
+  from?: number | null;
+  to?: number | null;
 }
 
 export interface IResponseLinks {

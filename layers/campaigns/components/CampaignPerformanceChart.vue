@@ -10,10 +10,14 @@ import {
 } from "chart.js";
 import type { ChartData, ChartOptions } from "chart.js";
 import { Line } from "vue-chartjs";
+import {
+  formatBucketLabel,
+  getNiceAxisMax,
+} from "~/utils/helpers/AnalyticsFormatters";
 import type {
-  CampaignPeriod,
-  CampaignPerformanceSeries,
-} from "../composables/useCampaignMockData";
+  CampaignSeriesPeriod,
+  ICampaignVerificationSeries,
+} from "../composables/useCampaignStore";
 
 ChartJS.register(
   CategoryScale,
@@ -24,29 +28,62 @@ ChartJS.register(
   Tooltip,
 );
 
-const props = defineProps<{
-  performance: Record<CampaignPeriod, CampaignPerformanceSeries>;
+const props = withDefaults(
+  defineProps<{
+    data: ICampaignVerificationSeries | null;
+    /** Dims the card while a refresh is in flight. */
+    loading?: boolean;
+    /** Shows the error state instead of the chart. */
+    failed?: boolean;
+  }>(),
+  {
+    loading: false,
+    failed: false,
+  },
+);
+
+const emit = defineEmits<{
+  /** Fired when the user asks to repeat the failed request. */
+  retry: [];
 }>();
 
+/** Selected chart window; the parent reloads the series when it changes. */
+const period = defineModel<CampaignSeriesPeriod>("period", { required: true });
+
 const { chartTheme } = useDashboardChartTheme();
-const selectedPeriod = ref<CampaignPeriod>("7D");
-const periodOptions: Array<{ label: CampaignPeriod; value: CampaignPeriod }> = [
-  { label: "7D", value: "7D" },
-  { label: "30D", value: "30D" },
-  { label: "90D", value: "90D" },
-  { label: "12M", value: "12M" },
+const periodOptions: Array<{ label: string; value: CampaignSeriesPeriod }> = [
+  { label: "7D", value: "7d" },
+  { label: "30D", value: "30d" },
+  { label: "90D", value: "90d" },
+  { label: "12M", value: "12m" },
 ];
 
-/** Resolves the fixture series for the reporting window selected by the user. */
-const activeSeries = computed(() => props.performance[selectedPeriod.value]);
+/** Template-ready series with axis labels and numeric fallbacks. */
+const series = computed(() => {
+  const points = props.data?.series ?? [];
+  const unit = props.data?.unit ?? "day";
+  return {
+    labels: points.map((point) => formatBucketLabel(point.bucket, unit)),
+    verifiedUsers: points.map((point) => point.verifiedUsers ?? 0),
+    tradedUsers: points.map((point) => point.tradedUsers ?? 0),
+  };
+});
 
-/** Maps campaign verification data into the Chart.js line-chart shape. */
+/** Whether the selected window has no buckets to plot. */
+const isEmpty = computed(() => series.value.labels.length === 0);
+
+/** Rounded y-axis ceiling so the grid splits into four even steps. */
+const axisMax = computed(() =>
+  getNiceAxisMax([...series.value.verifiedUsers, ...series.value.tradedUsers]),
+);
+
+/** Maps the campaign series into the Chart.js line-chart shape. */
 const chartData = computed<ChartData<"line">>(() => ({
-  labels: activeSeries.value.labels,
+  labels: series.value.labels,
   datasets: [
     {
       label: "Verify Users",
-      data: activeSeries.value.verifiedUsers,
+      data: series.value.verifiedUsers,
       borderColor: chartTheme.value.verified,
       backgroundColor: chartTheme.value.verified,
       borderWidth: 2.5,
@@ -57,7 +94,7 @@ const chartData = computed<ChartData<"line">>(() => ({
     },
     {
       label: "Users that traded",
-      data: activeSeries.value.usersThatTraded,
+      data: series.value.tradedUsers,
       borderColor: chartTheme.value.traded,
       backgroundColor: chartTheme.value.traded,
       borderWidth: 2,
@@ -91,17 +128,23 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
     x: {
       border: { display: false },
       grid: { display: false },
-      ticks: { color: chartTheme.value.mutedText, font: { size: 12 } },
+      ticks: {
+        color: chartTheme.value.mutedText,
+        font: { size: 12 },
+        autoSkip: true,
+        maxTicksLimit: 12,
+        maxRotation: 0,
+      },
     },
     y: {
       beginAtZero: true,
-      max: activeSeries.value.maximum,
+      max: axisMax.value,
       border: { display: false },
       grid: { color: chartTheme.value.grid, borderDash: [4, 4] },
       ticks: {
         color: chartTheme.value.mutedText,
         font: { size: 12 },
-        stepSize: activeSeries.value.maximum / 4,
+        stepSize: axisMax.value / 4,
       },
     },
   },
@@ -110,7 +153,9 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
 
 <template>
   <section
-    class="flex min-h-[455px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5 md:p-6"
+    class="flex min-h-[455px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5 transition-opacity md:p-6"
+    :class="{ 'opacity-60': props.loading }"
+    :aria-busy="props.loading"
     aria-labelledby="campaign-performance-title"
   >
     <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -121,35 +166,55 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
         <p class="mt-1 text-xs text-dashboard-text">Verified users and trade performance stats</p>
       </div>
       <AppPeriodSelector
-        v-model="selectedPeriod"
+        v-model="period"
         :options="periodOptions"
         aria-label="Campaign reporting period"
       />
     </header>
 
-    <div class="mt-8 min-h-[275px] flex-1" aria-label="Campaign verification and trade performance chart">
-      <ClientOnly>
-        <Line
-          :data="chartData"
-          :options="chartOptions"
-          aria-label="Line chart comparing verified campaign audience with audience members that traded"
-          role="img"
-        />
-        <template #fallback>
-          <div class="h-[275px]" aria-hidden="true" />
-        </template>
-      </ClientOnly>
-    </div>
+    <AppErrorState
+      v-if="props.failed"
+      class="mt-5 flex-1 !border-0"
+      compact
+      heading="We couldn't load the chart"
+      description="Check your connection and try again."
+      :retrying="props.loading"
+      @retry="emit('retry')"
+    />
 
-    <div class="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-dashboard-heading">
-      <span class="inline-flex items-center gap-2">
-        <i class="h-2 w-2 rounded-full bg-dashboard-chart-verified" aria-hidden="true" />
-        Verify Users
-      </span>
-      <span class="inline-flex items-center gap-2">
-        <i class="h-2 w-2 rounded-full bg-dashboard-chart-traded" aria-hidden="true" />
-        Users that traded
-      </span>
-    </div>
+    <AppEmptyState
+      v-else-if="isEmpty"
+      heading="No performance data yet"
+      empty-table-subtitle="No verifications or trades were recorded for this campaign in this period."
+      height="275px"
+      hide-image
+    />
+
+    <template v-else>
+      <div class="mt-8 min-h-[275px] flex-1" aria-label="Campaign verification and trade performance chart">
+        <ClientOnly>
+          <Line
+            :data="chartData"
+            :options="chartOptions"
+            aria-label="Line chart comparing verified campaign audience with audience members that traded"
+            role="img"
+          />
+          <template #fallback>
+            <div class="h-[275px]" aria-hidden="true" />
+          </template>
+        </ClientOnly>
+      </div>
+
+      <div class="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-dashboard-heading">
+        <span class="inline-flex items-center gap-2">
+          <i class="h-2 w-2 rounded-full bg-dashboard-chart-verified" aria-hidden="true" />
+          Verify Users
+        </span>
+        <span class="inline-flex items-center gap-2">
+          <i class="h-2 w-2 rounded-full bg-dashboard-chart-traded" aria-hidden="true" />
+          Users that traded
+        </span>
+      </div>
+    </template>
   </section>
 </template>

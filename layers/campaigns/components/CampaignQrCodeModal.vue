@@ -27,7 +27,7 @@ const registrationUrl = computed(
 
 /** Campaign start–end dates shown on the pass. */
 const campaignDates = computed(() =>
-  formatCampaignDateRange(props.campaign.start_date, props.campaign.end_date),
+  formatCampaignDateRange(props.campaign.startsAt, props.campaign.endsAt),
 );
 
 /** Returns the rendered QR canvas when it is available in the open modal. */
