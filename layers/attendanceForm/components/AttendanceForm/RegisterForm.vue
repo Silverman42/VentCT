@@ -1,46 +1,78 @@
 <script setup lang="ts">
-import { helpers, required, email } from "@vuelidate/validators";
+import {
+  helpers,
+  required,
+  email,
+  minLength,
+  maxLength,
+} from "@vuelidate/validators";
 import { useVuelidate } from "@vuelidate/core";
-import { VENT_SIGN_UP_URL } from "../../composables/useAttendanceFormStore";
+import {
+  VENT_SIGN_UP_URL,
+  type IRegisteredAttendee,
+} from "../../composables/useAttendanceFormStore";
 
 const props = defineProps<{
-  eventId: string;
+  slug: string;
   disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
-  registered: [firstName: string];
+  registered: [attendee: IRegisteredAttendee];
 }>();
 
-const { checkIn, checkingIn } = useAttendanceFormStore();
+const { registerAttendee, registering } = useAttendanceFormStore();
 
 const payload = reactive({
   name: "",
   email: "",
+  phone: "",
 });
 
+// Mirrors the backend rules for the public registration endpoint.
 const validations = computed(() => {
   return {
     name: {
-      required: helpers.withMessage("Full name is required", required),
+      required: helpers.withMessage("Please enter your full name.", required),
+      minLength: helpers.withMessage(
+        "Full name must be at least 2 characters",
+        minLength(2),
+      ),
+      maxLength: helpers.withMessage(
+        "Full name must not exceed 255 characters",
+        maxLength(255),
+      ),
     },
     email: {
-      required: helpers.withMessage("Email address is required", required),
+      required: helpers.withMessage(
+        "Please enter your email address.",
+        required,
+      ),
       email: helpers.withMessage("Enter a valid email address", email),
+      maxLength: helpers.withMessage(
+        "Email address must not exceed 255 characters",
+        maxLength(255),
+      ),
+    },
+    phone: {
+      maxLength: helpers.withMessage(
+        "Phone number must not exceed 30 characters",
+        maxLength(30),
+      ),
     },
   };
 });
 
 const v$ = useVuelidate(validations, payload);
 
-/** Validates the form, checks the attendee in and emits their first name on success. */
+/** Validates the form, registers the attendee and emits the result on success. */
 const register = async () => {
   v$.value.$touch();
   if (v$.value.$invalid || props.disabled) return;
 
   try {
-    const result = await checkIn(props.eventId, { ...payload });
-    emit("registered", result.name.split(/\s+/)[0] ?? result.name);
+    const attendee = await registerAttendee(props.slug, { ...payload });
+    emit("registered", attendee);
   } catch {
     // The store has already surfaced the failure as an error toast.
   }
@@ -50,6 +82,7 @@ const register = async () => {
 const resetForm = () => {
   payload.name = "";
   payload.email = "";
+  payload.phone = "";
   v$.value.$reset();
 };
 
@@ -93,6 +126,22 @@ defineExpose({ resetForm });
           @blur="v$.email.$touch()"
         />
       </AppInputContainer>
+
+      <AppInputContainer
+        for="check-in-phone"
+        label="Phone Number (optional)"
+        :error="v$.phone?.$errors[0]?.$message.toString() || ''"
+      >
+        <input
+          id="check-in-phone"
+          type="tel"
+          autocomplete="tel"
+          placeholder="e.g. +2348011223344"
+          v-model="payload.phone"
+          @input="v$.phone.$touch()"
+          @blur="v$.phone.$touch()"
+        />
+      </AppInputContainer>
     </div>
 
     <div class="w-full pt-4">
@@ -100,7 +149,7 @@ defineExpose({ resetForm });
         block
         size="md"
         color="primary"
-        :loading="checkingIn"
+        :loading="registering"
         :disabled="v$.$invalid || disabled"
       >
         Register

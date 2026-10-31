@@ -1,42 +1,71 @@
 import { ApiErrorHandler } from "~/utils/helpers/ApiErrorHandler";
+import type { IResponse } from "~/utils/types/misc/ResponseBody";
 
 /** External Vent sign-up page linked from the check-in form. Placeholder until the real URL is confirmed. */
 export const VENT_SIGN_UP_URL = "https://dashboard.vent.africa/sign-up";
 
-/** Public event details shown at the top of the check-in form. */
+/** Public event details shown when an attendee scans the event QR code. */
 export interface IPublicEvent {
+  name: string;
+  slug: string;
+  venue: string | null;
+  /** ISO-8601 UTC timestamp. */
+  eventDate: string | null;
+  description: string | null;
+  bannerUrl: string | null;
+}
+
+/** Payload submitted when an attendee self-registers for an event. */
+export interface IRegisterAttendeePayload {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+/** `attended` when the event auto-checks attendees in on scan, otherwise `not_attended`. */
+export type IRegistrationStatus = "attended" | "not_attended";
+
+/** Event summary returned with a successful registration. */
+export interface IRegistrationEventSummary {
+  name: string;
+  venue: string | null;
+  eventDate: string | null;
+}
+
+/** Attendee record returned after a successful self-registration. */
+export interface IRegisteredAttendee {
   id: string;
   name: string;
-  /** ISO date string (YYYY-MM-DD). */
-  date: string;
-  location: string;
-}
-
-/** Payload submitted when an attendee checks in to an event. */
-export interface ICheckInPayload {
-  name: string;
+  firstName: string;
   email: string;
+  phone: string | null;
+  status: IRegistrationStatus;
+  method: string | null;
+  event: IRegistrationEventSummary | null;
+  /** Link for the "Download the app" call to action. */
+  downloadUrl: string | null;
 }
 
-/** Attendee record returned after a successful check-in. */
-export interface ICheckInResult {
-  name: string;
+/** Data returned with a `409 Conflict` when the attendee is already registered. */
+export interface IDuplicateRegistrationData {
   email: string;
+  eventName: string;
 }
 
-/** Simulated network latency for the fixture-backed actions. */
-const MOCK_DELAY_MS = 800;
+/** Why the public event could not be shown. */
+export type IPublicEventError = "not_found" | "failed";
 
-/** Resolves after `ms` milliseconds to simulate a network round trip. */
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Reads the HTTP status code from a failed `$fetch` call. */
+const getStatusCode = (error: unknown): number | undefined =>
+  (error as { statusCode?: number; status?: number })?.statusCode ??
+  (error as { status?: number })?.status;
 
-/** Provides public event check-in state and fixture-backed actions. */
+/** Provides public event QR self-registration state and actions. */
 export const useAttendanceFormStore = () => {
-  // Declared for the upcoming backend; the actions below are fixture-backed until it ships.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const endpoints = {
-    EVENT: (id: string) => `/events/${id}/public`,
-    CHECK_IN: (id: string) => `/events/${id}/check-in`,
+    EVENT: (slug: string) => `/public/events/${encodeURIComponent(slug)}`,
+    REGISTER: (slug: string) =>
+      `/public/events/${encodeURIComponent(slug)}/register`,
   };
 
   const state = {
@@ -44,80 +73,97 @@ export const useAttendanceFormStore = () => {
       "useAttendanceFormStore.fetchingEvent",
       () => false,
     ),
-    checkingIn: useState<boolean>(
-      "useAttendanceFormStore.checkingIn",
+    registering: useState<boolean>(
+      "useAttendanceFormStore.registering",
       () => false,
     ),
     event: useState<IPublicEvent | null>(
       "useAttendanceFormStore.event",
       () => null,
     ),
-    eventError: useState<boolean>(
+    eventError: useState<IPublicEventError | null>(
       "useAttendanceFormStore.eventError",
-      () => false,
+      () => null,
     ),
-    registeredEmails: useState<string[]>(
-      "useAttendanceFormStore.registeredEmails",
-      () => ["clement@example.com"],
+    registration: useState<IRegisteredAttendee | null>(
+      "useAttendanceFormStore.registration",
+      () => null,
     ),
   };
 
   const actions = {
-    /** Loads the public details of an event into `event`; flags `eventError` on failure. */
-    async fetchEvent(eventId: string) {
+    /**
+     * Loads the public details of an event by its slug into `event`.
+     * Sets `eventError` to `not_found` for an unknown slug (no toast, the page
+     * shows its own state) or `failed` for any other error, then rethrows.
+     */
+    async fetchEvent(slug: string) {
       state.fetchingEvent.value = true;
-      state.eventError.value = false;
-      try {
-        await wait(MOCK_DELAY_MS);
-        const event: IPublicEvent = {
-          id: eventId,
-          name: "Campus Ambassador Program (CAP)",
-          date: "2026-07-10",
-          location: "University of Benin, Benin City, Edo State Nigeria.",
-        };
-        state.event.value = event;
-        return event;
-      } catch (error) {
-        state.eventError.value = true;
-        ApiErrorHandler(error, true, false, "Event fetch failed");
-        throw error;
-      } finally {
-        state.fetchingEvent.value = false;
-      }
+      state.eventError.value = null;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IPublicEvent>>(endpoints.EVENT(slug), {
+          method: "GET",
+        })
+        .then((response) => {
+          state.event.value = response.data;
+          return response.data;
+        })
+        .catch((error) => {
+          const isNotFound = getStatusCode(error) === 404;
+          state.event.value = null;
+          state.eventError.value = isNotFound ? "not_found" : "failed";
+          ApiErrorHandler(error, !isNotFound, false, "Event fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingEvent.value = false;
+        });
     },
 
     /**
-     * Registers an attendee for an event.
-     * Shows an error toast and rethrows when the email is already registered.
+     * Registers (and, when the event allows it, checks in) an attendee.
+     * Shows an "Already registered" toast for duplicates and rethrows every failure.
      */
-    async checkIn(eventId: string, payload: ICheckInPayload) {
-      state.checkingIn.value = true;
-      try {
-        await wait(MOCK_DELAY_MS);
-        const email = payload.email.trim().toLowerCase();
-        if (state.registeredEmails.value.includes(email)) {
-          throw {
-            statusCode: 409,
-            data: { message: "We found an existing record for this email." },
-          };
-        }
-        state.registeredEmails.value.push(email);
-        // Dismiss any lingering error toast from a previous attempt.
-        useToastHandler().closeToast();
-        const result: ICheckInResult = { name: payload.name.trim(), email };
-        return result;
-      } catch (error) {
-        const isDuplicate = (error as { statusCode?: number })?.statusCode === 409;
-        ApiErrorHandler(
-          error,
-          true,
-          false,
-          isDuplicate ? "You're already registered" : "Registration failed",
-        );
-        throw error;
-      } finally {
-        state.checkingIn.value = false;
-      }
+    async registerAttendee(slug: string, payload: IRegisterAttendeePayload) {
+      state.registering.value = true;
+
+      const phone = payload.phone?.trim();
+      const body: IRegisterAttendeePayload = {
+        name: payload.name.trim(),
+        email: payload.email.trim(),
+        ...(phone ? { phone } : {}),
+      };
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IRegisteredAttendee>>(endpoints.REGISTER(slug), {
+          method: "POST",
+          body,
+        })
+        .then((response) => {
+          state.registration.value = response.data;
+          // Dismiss any lingering error toast from a previous attempt.
+          useToastHandler().closeToast();
+          return response.data;
+        })
+        .catch((error) => {
+          const isDuplicate = getStatusCode(error) === 409;
+          ApiErrorHandler(
+            error,
+            true,
+            false,
+            isDuplicate ? "Already registered" : "Registration failed",
+          );
+          throw error;
+        })
+        .finally(() => {
+          state.registering.value = false;
+        });
+    },
+
+    /** Clears the last registration so the next attendee starts fresh. */
+    resetRegistration() {
+      state.registration.value = null;
     },
   };
 

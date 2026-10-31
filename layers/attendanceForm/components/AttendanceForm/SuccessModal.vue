@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { IRegisteredAttendee } from "../../composables/useAttendanceFormStore";
+
 const emit = defineEmits<{
   again: [];
 }>();
@@ -8,17 +10,43 @@ const modal = ref<{
   hideDialogBox: () => void;
 } | null>(null);
 
-const firstName = ref<string>("");
+const attendee = ref<IRegisteredAttendee | null>(null);
 const iconIsRevealed = ref<boolean>(false);
 
+/** Template-ready view of the registration result with fallbacks. */
+const result = computed(() => {
+  const firstName =
+    attendee.value?.firstName?.trim() ||
+    attendee.value?.name?.trim().split(/\s+/)[0] ||
+    "";
+  const eventName = attendee.value?.event?.name?.trim() ?? "";
+  const isCheckedIn = attendee.value?.status === "attended";
+  const downloadUrl = attendee.value?.downloadUrl?.trim() ?? "";
+
+  return {
+    heading: `You're all set${firstName ? `, ${firstName}` : ""}!`,
+    message: isCheckedIn
+      ? `You've been checked in${eventName ? ` to ${eventName}` : ""}.`
+      : "Your registration was successful.",
+    downloadUrl,
+    hasDownloadUrl: !!downloadUrl,
+  };
+});
+
 /** Opens the modal for the given attendee and animates the check icon in. */
-const open = (name: string) => {
-  firstName.value = name;
+const open = (registered: IRegisteredAttendee) => {
+  attendee.value = registered;
   iconIsRevealed.value = false;
   modal.value?.showDialogBox();
   setTimeout(() => {
     iconIsRevealed.value = true;
   }, 400);
+};
+
+/** Opens the Vent app download page in a new tab. */
+const openDownload = () => {
+  if (!result.value.hasDownloadUrl) return;
+  window.open(result.value.downloadUrl, "_blank", "noopener,noreferrer");
 };
 
 /** Closes the modal. */
@@ -69,22 +97,36 @@ defineExpose({ open, close });
 
       <div class="flex flex-col items-center gap-1">
         <h2 class="text-center text-2xl font-medium text-dashboard-heading">
-          You're all set{{ firstName ? `, ${firstName}` : "" }}!
+          {{ result.heading }}
         </h2>
         <p class="text-center text-base text-dashboard-text">
-          Your registration was successful.
+          {{ result.message }}
         </p>
       </div>
 
-      <AppButton
-        type="button"
-        size="md"
-        color="primary"
-        class="w-full max-w-[300px]"
-        @click="emit('again')"
-      >
-        Register Someone Else
-      </AppButton>
+      <div class="flex w-full flex-col items-center gap-3">
+        <AppButton
+          v-if="result.hasDownloadUrl"
+          type="button"
+          size="md"
+          color="primary"
+          outlined
+          class="w-full max-w-[300px]"
+          @click="openDownload"
+        >
+          Download the Vent App
+        </AppButton>
+
+        <AppButton
+          type="button"
+          size="md"
+          color="primary"
+          class="w-full max-w-[300px]"
+          @click="emit('again')"
+        >
+          Register Someone Else
+        </AppButton>
+      </div>
     </div>
   </AppModal>
 </template>
