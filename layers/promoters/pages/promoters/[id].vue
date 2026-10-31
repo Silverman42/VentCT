@@ -9,7 +9,7 @@ definePageMeta({
 
 const route = useRoute();
 
-/** Resolves the scalar promoter route parameter used by the fixture lookup. */
+/** Resolves the scalar promoter route parameter passed to the profile component. */
 const promoterId = computed(() => {
   const value = route.params.id;
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");

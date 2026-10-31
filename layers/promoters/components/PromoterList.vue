@@ -1,26 +1,50 @@
 <script setup lang="ts">
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
+import {
+  formatCount,
+  formatPercent,
+} from "~/utils/helpers/AnalyticsFormatters";
 import type {
   ITableBodyData,
   ITableHeaderData,
 } from "~/utils/types/misc/TableComponent";
-import type { Promoter } from "../composables/usePromoterMockData";
 
 interface ModalController {
   open: () => Promise<void> | void;
 }
 
-const PROMOTERS_PER_PAGE = 10;
+/** Table-ready promoter row with display fallbacks. */
+interface IPromoterRow extends ITableBodyData {
+  id: string;
+  name: string;
+  campaign: string;
+  email: string;
+  phone: string;
+  referralCode: string;
+}
 
-const { promoters, campaignOptions } = usePromoterMockData();
+const {
+  promoters,
+  promoterStats,
+  fetchingPromoters,
+  promotersPage,
+  promotersPerPage,
+  promotersTotal,
+  promotersSearch,
+  promotersCampaignId,
+  fetchPromoters,
+} = usePromotersStore();
+const { campaignOptions, fetchCampaignOptions } = useCampaignStore();
 const route = useRoute();
 const router = useRouter();
 const campaignDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const selectAllInput = ref<HTMLInputElement | null>(null);
 const newPromoterModal = ref<ModalController | null>(null);
 const exportPromoterModal = ref<ModalController | null>(null);
-const isApplyingRoute = ref(false);
+const deletePromoterModal = ref<ModalController | null>(null);
+const hasLoaded = ref(false);
+const loadFailed = ref(false);
 
 const tableHeadings: ITableHeaderData[] = [
   { id: "select", name: "Select", mobileLabel: "Select", width: "4.5rem" },
@@ -43,73 +67,83 @@ const getQueryValue = (
   return typeof scalarValue === "string" ? scalarValue : "";
 };
 
-/** Confirms that the requested campaign appears in the visible fixture options. */
-const isCampaignOption = (value: string): boolean =>
-  campaignOptions.includes(value);
-
-/** Normalizes route values into the three list controls. */
+/** Normalizes the route query into promoter-list controls. */
 const getRouteState = (): {
   search: string;
-  campaign: string;
+  campaignId: string;
   page: number;
 } => {
   const requestedPage = Number.parseInt(getQueryValue(route.query.page), 10);
-  const requestedCampaign = getQueryValue(route.query.campaign);
 
   return {
-    search: getQueryValue(route.query.search),
-    campaign: isCampaignOption(requestedCampaign) ? requestedCampaign : "all",
+    search: getQueryValue(route.query.search).trim(),
+    campaignId: getQueryValue(route.query.campaign).trim(),
     page: Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1,
   };
 };
 
-const initialRouteState = getRouteState();
-const searchInput = ref(initialRouteState.search);
-const campaignFilter = ref(initialRouteState.campaign);
-const currentPage = ref(initialRouteState.page);
+const searchInput = ref(getRouteState().search);
 const selectedPromoterIds = ref<Set<string>>(new Set());
 
-/** Filters promoter fixtures using the visible search text and campaign selector. */
-const filteredPromoters = computed(() => {
-  const searchTerm = searchInput.value.trim().toLocaleLowerCase();
-
-  return promoters.filter((promoter) => {
-    const matchesCampaign =
-      campaignFilter.value === "all" ||
-      promoter.campaign === campaignFilter.value;
-    const matchesSearch =
-      !searchTerm ||
-      [
-        promoter.name,
-        promoter.campaign,
-        promoter.email,
-        promoter.phone,
-        promoter.referralCode,
-      ]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-
-    return matchesCampaign && matchesSearch;
-  });
-});
-
-/** Calculates the final valid table page for the current result set. */
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredPromoters.value.length / PROMOTERS_PER_PAGE)),
+/** Promoter rows mapped from the API with explicit fallbacks. */
+const promoterRows = computed<IPromoterRow[]>(() =>
+  promoters.value.map((promoter) => ({
+    id: promoter.id,
+    name: promoter.name || "Unnamed promoter",
+    campaign: promoter.campaignName || "—",
+    email: promoter.email || "—",
+    phone: promoter.phone || "—",
+    referralCode: promoter.referralCode || "—",
+  })),
 );
 
-/** Selects the promoter records visible on the current paginated table page. */
-const pagedPromoters = computed(() => {
-  const start = (currentPage.value - 1) * PROMOTERS_PER_PAGE;
-  return filteredPromoters.value.slice(start, start + PROMOTERS_PER_PAGE);
+/** Summary cards built from the list response's summary block. */
+const summaryCards = computed(() => [
+  {
+    label: "Total Promoters",
+    value: formatCount(promoterStats.value.totalPromoters),
+    description: "All active promoters",
+  },
+  {
+    label: "Total Audience",
+    value: formatCount(promoterStats.value.totalAudience),
+    description: "Unique audience",
+  },
+  {
+    label: "Verified Users",
+    value: formatCount(promoterStats.value.verifiedUsers),
+    description: "Audience with verified status",
+  },
+  {
+    label: "Completed Trade",
+    value: formatCount(promoterStats.value.completedTrades),
+    description: "Completed transactions",
+  },
+  {
+    label: "Conversion Rate",
+    value: formatPercent(promoterStats.value.conversionRate),
+    description: "Registration to transaction rate",
+  },
+]);
+
+/** Label for the active campaign filter. */
+const campaignFilterLabel = computed(() => {
+  if (!promotersCampaignId.value) return "All";
+  return (
+    campaignOptions.value.find(
+      (campaign) => campaign.id === promotersCampaignId.value,
+    )?.name ?? "Selected campaign"
+  );
 });
+
+/** Selected ids as an array for the delete modal. */
+const selectedIdList = computed(() => [...selectedPromoterIds.value]);
 
 /** Indicates whether every promoter rendered on the current page is selected. */
 const areVisiblePromotersSelected = computed(
   () =>
-    pagedPromoters.value.length > 0 &&
-    pagedPromoters.value.every((promoter) =>
+    promoters.value.length > 0 &&
+    promoters.value.every((promoter) =>
       selectedPromoterIds.value.has(promoter.id),
     ),
 );
@@ -118,53 +152,67 @@ const areVisiblePromotersSelected = computed(
 const areSomeVisiblePromotersSelected = computed(
   () =>
     !areVisiblePromotersSelected.value &&
-    pagedPromoters.value.some((promoter) =>
+    promoters.value.some((promoter) =>
       selectedPromoterIds.value.has(promoter.id),
     ),
 );
 
-/** Synchronizes local list controls to compact, shareable query parameters. */
-const syncRouteState = (): void => {
-  const nextQuery: Record<string, string> = {};
-
-  if (searchInput.value.trim()) nextQuery.search = searchInput.value.trim();
-  if (campaignFilter.value !== "all") nextQuery.campaign = campaignFilter.value;
-  if (currentPage.value > 1) nextQuery.page = String(currentPage.value);
-
-  const currentQuery = {
-    search: getQueryValue(route.query.search),
-    campaign: getQueryValue(route.query.campaign),
-    page: getQueryValue(route.query.page),
-  };
-
-  if (
-    currentQuery.search === (nextQuery.search ?? "") &&
-    currentQuery.campaign === (nextQuery.campaign ?? "") &&
-    currentQuery.page === (nextQuery.page ?? "")
-  ) {
-    return;
+/**
+ * Runs a list request while tracking first-load and failure state, so the
+ * shimmer and error section render independently of the table's refetch state.
+ */
+const runListRequest = async (
+  request: () => Promise<unknown>,
+): Promise<void> => {
+  loadFailed.value = false;
+  try {
+    await request();
+  } catch {
+    loadFailed.value = true;
+  } finally {
+    hasLoaded.value = true;
   }
-
-  void router.replace({ path: route.path, query: nextQuery });
 };
 
-/** Debounces query replacement until typing pauses in the search control. */
-const syncDebouncedSearch = useDebounceFn(syncRouteState, 300);
-
-/** Applies browser-navigation query changes to the local table controls. */
-const applyRouteState = (): void => {
-  const nextState = getRouteState();
-  isApplyingRoute.value = true;
-  searchInput.value = nextState.search;
-  campaignFilter.value = nextState.campaign;
-  currentPage.value = nextState.page;
-  isApplyingRoute.value = false;
+/** Copies the route query into store filters and fetches the requested page. */
+const loadFromRoute = (): Promise<void> => {
+  const { search, campaignId, page } = getRouteState();
+  promotersSearch.value = search;
+  promotersCampaignId.value = campaignId;
+  return runListRequest(() => fetchPromoters(page));
 };
 
-/** Updates the campaign filter and dismisses its dropdown menu. */
-const selectCampaignFilter = (campaign: string): void => {
-  campaignFilter.value = campaign;
+/** Writes list controls to compact route query values; the route watcher fetches. */
+const updateRouteQuery = (changes: {
+  search?: string;
+  campaignId?: string;
+  page?: number;
+}): void => {
+  const next = { ...getRouteState(), ...changes };
+  const query: Record<string, string> = {};
+
+  if (next.search) query.search = next.search;
+  if (next.campaignId) query.campaign = next.campaignId;
+  if (next.page > 1) query.page = String(next.page);
+
+  void router.replace({ path: route.path, query });
+};
+
+/** Pushes the search term to the route after the user stops typing. */
+const syncDebouncedSearch = useDebounceFn((term: string) => {
+  if (term.trim() === getRouteState().search) return;
+  updateRouteQuery({ search: term.trim(), page: 1 });
+}, 300);
+
+/** Updates the campaign filter (empty for all) and dismisses its dropdown menu. */
+const selectCampaignFilter = (campaignId: string): void => {
   campaignDropdown.value?.closeDropdown();
+  updateRouteQuery({ campaignId, page: 1 });
+};
+
+/** Moves the table to another page. */
+const changePage = (page: number): void => {
+  updateRouteQuery({ page });
 };
 
 /** Toggles one promoter row without triggering its navigation handler. */
@@ -185,28 +233,37 @@ const toggleVisiblePromoterSelection = (): void => {
   const nextSelection = new Set(selectedPromoterIds.value);
 
   if (areVisiblePromotersSelected.value) {
-    pagedPromoters.value.forEach((promoter) => nextSelection.delete(promoter.id));
+    promoters.value.forEach((promoter) => nextSelection.delete(promoter.id));
   } else {
-    pagedPromoters.value.forEach((promoter) => nextSelection.add(promoter.id));
+    promoters.value.forEach((promoter) => nextSelection.add(promoter.id));
   }
 
   selectedPromoterIds.value = nextSelection;
 };
 
-/** Opens the selected promoter profile while preserving list history in the browser. */
-const openPromoter = (row: ITableBodyData): void => {
-  const promoter = row as Promoter;
-  void navigateTo(`/promoters/${promoter.id}`);
+/** Clears the selection after the selected promoters are deleted. */
+const handlePromotersDeleted = (): void => {
+  selectedPromoterIds.value = new Set();
 };
 
-/** Opens a clean, validation-only promoter creation form. */
+/** Opens the selected promoter profile. */
+const openPromoter = (row: ITableBodyData): void => {
+  void navigateTo(`/promoters/${String(row.id)}`);
+};
+
+/** Opens a fresh promoter creation form. */
 const openNewPromoterModal = (): void => {
   void newPromoterModal.value?.open();
 };
 
-/** Opens the fixture-backed promoter export controls. */
+/** Opens the export format picker. */
 const openExportPromoterModal = (): void => {
   void exportPromoterModal.value?.open();
+};
+
+/** Opens the delete confirmation for the selected promoters. */
+const openDeleteSelectedModal = (): void => {
+  void deletePromoterModal.value?.open();
 };
 
 /** Updates the native select-all checkbox's indeterminate visual state. */
@@ -216,46 +273,15 @@ const refreshSelectAllState = (): void => {
   }
 };
 
-watch(
-  searchInput,
-  () => {
-    if (isApplyingRoute.value) return;
-    currentPage.value = 1;
-    syncDebouncedSearch();
-  },
-  { flush: "sync" },
-);
-
-watch(
-  campaignFilter,
-  () => {
-    if (isApplyingRoute.value) return;
-    currentPage.value = 1;
-    syncRouteState();
-  },
-  { flush: "sync" },
-);
-
-watch(
-  currentPage,
-  () => {
-    if (!isApplyingRoute.value) syncRouteState();
-  },
-  { flush: "sync" },
-);
+watch(searchInput, (term) => syncDebouncedSearch(term));
 
 watch(
   () => route.query,
-  () => applyRouteState(),
-  { deep: true },
-);
-
-watch(
-  totalPages,
-  (lastPage) => {
-    if (currentPage.value > lastPage) currentPage.value = lastPage;
+  () => {
+    const { search } = getRouteState();
+    if (search !== searchInput.value.trim()) searchInput.value = search;
+    void loadFromRoute();
   },
-  { immediate: true },
 );
 
 watch(
@@ -264,142 +290,189 @@ watch(
   { flush: "post" },
 );
 
-onMounted(() => refreshSelectAllState());
+onMounted(() => {
+  void loadFromRoute();
+  void fetchCampaignOptions().catch(() => undefined);
+});
 </script>
 
 <template>
-  <div class="flex min-w-0 w-full flex-col gap-6">
+  <PromoterListShimmer v-if="!hasLoaded" />
+
+  <div v-else class="flex min-w-0 w-full flex-col gap-6">
     <AppHeading
       title="Promoters"
       subtitle="Manage and monitor promoters performance"
     />
 
-    <section
-      class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
-      aria-label="Promoter summary metrics"
-    >
-      <article
-        v-for="metric in [
-          { label: 'Total Promoters', value: '109', description: 'All active promoters' },
-          { label: 'Total Audience', value: '12,792', description: 'Unique audience' },
-          { label: 'Verified Users', value: '7,823', description: 'Audience with verified status' },
-          { label: 'Completed Trade', value: '1,923', description: 'Completed transactions' },
-          { label: 'Conversion Rate', value: '15.4%', description: 'Registration to transaction rate' },
-        ]"
-        :key="metric.label"
-        class="flex min-h-[116px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
+    <AppErrorState
+      v-if="loadFailed"
+      heading="We couldn't load promoters"
+      description="Something went wrong while fetching the promoter list. Please try again."
+      :retrying="fetchingPromoters"
+      @retry="loadFromRoute"
+    />
+
+    <template v-else>
+      <section
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        aria-label="Promoter summary metrics"
       >
-        <p class="text-xs text-dashboard-text">{{ metric.label }}</p>
-        <p class="mt-2 text-2xl font-medium tracking-tight text-dashboard-heading">
-          {{ metric.value }}
-        </p>
-        <p class="mt-auto pt-2 text-[0.6875rem] text-dashboard-text">
-          {{ metric.description }}
-        </p>
-      </article>
-    </section>
-
-    <TableComponent
-      :headings="tableHeadings"
-      :body="pagedPromoters"
-      clickable
-      empty-heading="No promoters found"
-      empty-subtitle="Try changing the search text or campaign filter."
-      @row-click="openPromoter"
-    >
-      <template #table-heading>
-        <TableComponentHeader
-          v-model:search="searchInput"
-          table-name="Promoters"
-          search-placeholder="Search..."
+        <article
+          v-for="metric in summaryCards"
+          :key="metric.label"
+          class="flex min-h-[116px] flex-col rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
         >
-          <template #filters>
-            <AppDropdown ref="campaignDropdown" position="right" :width-is-finite="false">
-              <template #default>
-                <button
-                  type="button"
-                  class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
-                >
-                  Filter by: {{ campaignFilter === 'all' ? 'All' : campaignFilter }}
-                  <Icon name="vent:arrow-down" size="0.9rem" />
-                </button>
-              </template>
-              <template #dropdown_body>
-                <div class="max-h-72 min-w-56 space-y-1 overflow-y-auto">
+          <p class="text-xs text-dashboard-text">{{ metric.label }}</p>
+          <p
+            class="mt-2 text-2xl font-medium tracking-tight text-dashboard-heading"
+          >
+            {{ metric.value }}
+          </p>
+          <p class="mt-auto pt-2 text-[0.6875rem] text-dashboard-text">
+            {{ metric.description }}
+          </p>
+        </article>
+      </section>
+
+      <TableComponent
+        :headings="tableHeadings"
+        :body="promoterRows"
+        :is-loading="fetchingPromoters"
+        clickable
+        empty-heading="No promoters found"
+        empty-subtitle="Try changing the search text or campaign filter."
+        @row-click="openPromoter"
+      >
+        <template #table-heading>
+          <TableComponentHeader
+            v-model:search="searchInput"
+            table-name="Promoters"
+            search-placeholder="Search..."
+          >
+            <template #filters>
+              <AppDropdown
+                ref="campaignDropdown"
+                position="right"
+                :width-is-finite="false"
+              >
+                <template #default>
                   <button
-                    v-for="campaign in ['all', ...campaignOptions]"
-                    :key="campaign"
                     type="button"
-                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                    :class="{ 'bg-dashboard-bg-dark': campaignFilter === campaign }"
-                    @click="selectCampaignFilter(campaign)"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
                   >
-                    {{ campaign === 'all' ? 'All' : campaign }}
+                    Filter by: {{ campaignFilterLabel }}
+                    <Icon name="vent:arrow-down" size="0.9rem" />
                   </button>
-                </div>
-              </template>
-            </AppDropdown>
-          </template>
-          <template #actions>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default"
-              aria-label="Export promoter data"
-              @click="openExportPromoterModal"
-            >
-              <Icon name="vent:external-link" size="1rem" />
-              Export
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-color-default px-3 py-2.5 text-sm text-white transition hover:bg-brand-color-005"
-              aria-label="Create a new promoter"
-              @click="openNewPromoterModal"
-            >
-              New Promoter
-            </button>
-          </template>
-        </TableComponentHeader>
-      </template>
+                </template>
+                <template #dropdown_body>
+                  <div class="max-h-72 min-w-56 space-y-1 overflow-y-auto">
+                    <button
+                      type="button"
+                      class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                      :class="{ 'bg-dashboard-bg-dark': !promotersCampaignId }"
+                      @click="selectCampaignFilter('')"
+                    >
+                      All
+                    </button>
+                    <button
+                      v-for="campaign in campaignOptions"
+                      :key="campaign.id"
+                      type="button"
+                      class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                      :class="{
+                        'bg-dashboard-bg-dark':
+                          promotersCampaignId === campaign.id,
+                      }"
+                      @click="selectCampaignFilter(campaign.id)"
+                    >
+                      {{ campaign.name }}
+                    </button>
+                  </div>
+                </template>
+              </AppDropdown>
+            </template>
+            <template #actions>
+              <button
+                v-if="selectedPromoterIds.size > 0"
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300 px-3 py-2.5 text-sm text-red-600 transition hover:bg-red-100/60 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+                aria-label="Delete selected promoters"
+                @click="openDeleteSelectedModal"
+              >
+                <Icon name="vent:trash" size="1rem" />
+                Delete selected ({{ selectedPromoterIds.size }})
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default"
+                aria-label="Export promoter data"
+                @click="openExportPromoterModal"
+              >
+                <Icon name="vent:external-link" size="1rem" />
+                Export
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-color-default px-3 py-2.5 text-sm text-white transition hover:bg-brand-color-005"
+                aria-label="Create a new promoter"
+                @click="openNewPromoterModal"
+              >
+                New Promoter
+              </button>
+            </template>
+          </TableComponentHeader>
+        </template>
 
-      <template #head_select>
-        <input
-          ref="selectAllInput"
-          type="checkbox"
-          class="h-4 w-4 cursor-pointer accent-brand-color-default"
-          :checked="areVisiblePromotersSelected"
-          aria-label="Select all promoters on this page"
-          @click.stop
-          @change="toggleVisiblePromoterSelection"
-        />
-      </template>
+        <template #head_select>
+          <input
+            ref="selectAllInput"
+            type="checkbox"
+            class="h-4 w-4 cursor-pointer accent-brand-color-default"
+            :checked="areVisiblePromotersSelected"
+            aria-label="Select all promoters on this page"
+            @click.stop
+            @change="toggleVisiblePromoterSelection"
+          />
+        </template>
 
-      <template #col_select="{ rowData }">
-        <input
-          type="checkbox"
-          class="h-4 w-4 cursor-pointer accent-brand-color-default"
-          :checked="selectedPromoterIds.has(String(rowData.id))"
-          :aria-label="`Select ${rowData.name}`"
-          @click.stop
-          @change="togglePromoterSelection(String(rowData.id))"
-        />
-      </template>
+        <template #col_select="{ rowData }">
+          <input
+            type="checkbox"
+            class="h-4 w-4 cursor-pointer accent-brand-color-default"
+            :checked="selectedPromoterIds.has(String(rowData.id))"
+            :aria-label="`Select ${rowData.name}`"
+            @click.stop
+            @change="togglePromoterSelection(String(rowData.id))"
+          />
+        </template>
 
-      <template #col_open>
-        <Icon name="vent:arrow-right" size="1.15rem" class="text-dashboard-heading" />
-      </template>
+        <template #col_open>
+          <Icon
+            name="vent:arrow-right"
+            size="1.15rem"
+            class="text-dashboard-heading"
+          />
+        </template>
 
-      <template #table-footer>
-        <TableComponentPagination
-          :page="currentPage"
-          :per-page="PROMOTERS_PER_PAGE"
-          :total-items="filteredPromoters.length"
-          @change-page="currentPage = $event"
-        />
-      </template>
-    </TableComponent>
+        <template #table-footer>
+          <TableComponentPagination
+            :page="promotersPage"
+            :per-page="promotersPerPage"
+            :total-items="promotersTotal"
+            @change-page="changePage"
+          />
+        </template>
+      </TableComponent>
+    </template>
 
-    <PromoterNewModal ref="newPromoterModal" :campaign-options="campaignOptions" />
-    <PromoterExportModal ref="exportPromoterModal" :promoters="promoters" />
+    <PromoterNewModal ref="newPromoterModal" />
+    <PromoterExportModal ref="exportPromoterModal" />
+    <PromoterDeleteModal
+      ref="deletePromoterModal"
+      :promoter-ids="selectedIdList"
+      batch
+      @deleted="handlePromotersDeleted"
+    />
   </div>
 </template>

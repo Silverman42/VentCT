@@ -1,34 +1,65 @@
 <script setup lang="ts">
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
-import type { ITableHeaderData } from "~/utils/types/misc/TableComponent";
+import { DateFormatter } from "~/utils/helpers/DateFormatter";
+import type { ITableBodyData, ITableHeaderData } from "~/utils/types/misc/TableComponent";
 import type { TabsData } from "~/utils/types/misc/Tabs";
+import type { PromoterAudienceStatusFilter } from "../composables/usePromotersStore";
 import {
-  promoterPeriodOptions,
-  type PromoterAudienceFilter,
+  PROMOTER_AUDIENCE_FILTER_OPTIONS,
+  PROMOTER_METRIC_SHIMMER_ROWS,
+  PROMOTER_PERIOD_OPTIONS,
+  buildPromoterMetricRows,
+  getPromoterInitials,
   type PromoterDetailTab,
   type PromoterPeriod,
-} from "../composables/usePromoterMockData";
+} from "../utils/PromoterProfile";
 
 interface ModalController {
   open: () => Promise<void> | void;
   close: () => void;
 }
 
+/** Table-ready referred-audience row. */
+interface IAudienceRow extends ITableBodyData {
+  id: string;
+  name: string;
+  campaign: string;
+  email: string;
+  phone: string;
+  hasTransaction: boolean;
+  isVerified: boolean;
+}
+
 const props = defineProps<{
   promoterId: string;
 }>();
 
-const { getPromoterDetails, campaignOptions } = usePromoterMockData();
+const {
+  selectedPromoter,
+  fetchingPromoterDetails,
+  promoterAudiences,
+  fetchingPromoterAudiences,
+  promoterAudiencesPage,
+  promoterAudiencesPerPage,
+  promoterAudiencesTotal,
+  promoterAudiencesStatus,
+  fetchPromoterDetails,
+  fetchPromoterAudiences,
+  setPromoterAudiencesSearch,
+  setPromoterAudiencesStatus,
+  setPromoterProfileFilters,
+  resetPromoterProfile,
+} = usePromotersStore();
 const route = useRoute();
 const router = useRouter();
 const editPromoterModal = ref<ModalController | null>(null);
+const deletePromoterModal = ref<ModalController | null>(null);
 const audienceDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const periodDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const searchInput = ref("");
-const audienceSearch = ref("");
-const audienceFilter = ref<PromoterAudienceFilter>("all");
-const audiencePage = ref(1);
+const hasLoaded = ref(false);
+const loadFailed = ref(false);
 const isApplyingRoute = ref(false);
 
 const tableHeadings: ITableHeaderData[] = [
@@ -47,20 +78,8 @@ const detailTabs: Array<TabsData & { id: PromoterDetailTab }> = [
   { id: "utility", name: "Utility" },
 ];
 
-const audienceFilterOptions: Array<{
-  value: PromoterAudienceFilter;
-  label: string;
-}> = [
-  { value: "all", label: "All" },
-  { value: "verified", label: "Verified" },
-  { value: "not-verified", label: "Not verified" },
-  { value: "with-transaction", label: "With transaction" },
-  { value: "without-transaction", label: "Without transaction" },
-];
-
-const tablePageSize = 5;
 const defaultTab: PromoterDetailTab = "audiences";
-const defaultPeriod: PromoterPeriod = "30d";
+const defaultPeriod: PromoterPeriod = "last_30_days";
 
 /** Reads one scalar value from a Nuxt query-string value. */
 const getQueryValue = (
@@ -79,7 +98,7 @@ const isPromoterDetailTab = (value: string): value is PromoterDetailTab =>
 
 /** Identifies a supported reporting period from a query-string value. */
 const isPromoterPeriod = (value: string): value is PromoterPeriod =>
-  promoterPeriodOptions.some((period) => period.value === value);
+  PROMOTER_PERIOD_OPTIONS.some((period) => period.value === value);
 
 /** Normalizes the visible tab and period controls from the current route. */
 const getRouteState = (): {
@@ -99,79 +118,95 @@ const initialRouteState = getRouteState();
 const activeTab = ref<string>(initialRouteState.tab);
 const activePeriod = ref<PromoterPeriod>(initialRouteState.period);
 
-/** Resolves profile fixtures and makes a missing promoter explicit to the template. */
-const promoterDetails = computed(() => getPromoterDetails(props.promoterId));
-
-/** Supplies a null-safe profile view model for the loaded detail template. */
+/** Null-safe profile view model for the header and referral card. */
 const profile = computed(() => {
-  const details = promoterDetails.value;
-  if (!details) return null;
+  const promoter = selectedPromoter.value;
+  if (!promoter) return null;
 
   return {
-    ...details.promoter,
-    referralCode: details.promoter.referralCode || "—",
-    appLink: details.referral.appLink,
-    webLink: details.referral.webLink,
+    name: promoter.name || "Unnamed promoter",
+    initials: getPromoterInitials(promoter.name),
+    avatarUrl: promoter.avatarUrl || "",
+    hasAvatar: Boolean(promoter.avatarUrl),
+    campaign: promoter.campaignName || "No campaign",
+    email: promoter.email || "—",
+    phone: promoter.phone || "—",
+    joinedDate: promoter.createdAt
+      ? DateFormatter.formatDate(promoter.createdAt)
+      : "—",
+    referralCode: promoter.referralCode || "—",
+    appLink: promoter.appReferralLink || "—",
+    webLink: promoter.webReferralLink || "—",
   };
 });
+
+/** Metric card rows per tab; transaction tabs are `null` without permission. */
+const metricRows = computed(() =>
+  buildPromoterMetricRows(selectedPromoter.value?.metrics),
+);
+
+/** Referred-audience rows mapped from the API with display fallbacks. */
+const audienceRows = computed<IAudienceRow[]>(() =>
+  promoterAudiences.value.map((member) => ({
+    id: member.id,
+    name: member.name || "—",
+    campaign: member.campaignName || "—",
+    email: member.email || "—",
+    phone: member.phone || "—",
+    hasTransaction: Boolean(member.hasTransacted),
+    isVerified: Boolean(member.isVerified),
+  })),
+);
 
 /** Resolves the dropdown label for the selected reporting period. */
 const activePeriodLabel = computed(
   () =>
-    promoterPeriodOptions.find((period) => period.value === activePeriod.value)
+    PROMOTER_PERIOD_OPTIONS.find((period) => period.value === activePeriod.value)
       ?.label ?? "Last 30 days",
 );
 
 /** Resolves the dropdown label for the selected audience filter. */
 const activeAudienceFilterLabel = computed(
   () =>
-    audienceFilterOptions.find(
-      (option) => option.value === audienceFilter.value,
+    PROMOTER_AUDIENCE_FILTER_OPTIONS.find(
+      (option) => option.value === promoterAudiencesStatus.value,
     )?.label ?? "All",
 );
 
-/** Debounces table searching until the user pauses typing. */
+/** Loads the profile and its first page of referred audience for the current promoter. */
+const loadPromoter = async (): Promise<void> => {
+  loadFailed.value = false;
+  setPromoterProfileFilters({ timeframe: activePeriod.value });
+
+  try {
+    const promoter = await fetchPromoterDetails(props.promoterId);
+    if (promoter) {
+      void fetchPromoterAudiences(props.promoterId, 1).catch(() => undefined);
+    }
+  } catch {
+    loadFailed.value = true;
+  } finally {
+    hasLoaded.value = true;
+  }
+};
+
+/** Refetches profile metrics after the period changes, keeping the page in place. */
+const refreshMetrics = (): void => {
+  setPromoterProfileFilters({ timeframe: activePeriod.value });
+  void fetchPromoterDetails(props.promoterId).catch(() => undefined);
+};
+
+/** Debounces audience search until the user pauses typing. */
 const updateAudienceSearch = useDebounceFn((value: string) => {
-  audienceSearch.value = value;
-  audiencePage.value = 1;
+  void setPromoterAudiencesSearch(props.promoterId, value).catch(
+    () => undefined,
+  );
 }, 300);
 
-/** Filters referred audience records with the active search and tab-specific filter. */
-const filteredAudience = computed(() => {
-  const details = promoterDetails.value;
-  if (!details) return [];
-
-  const searchTerm = audienceSearch.value.trim().toLocaleLowerCase();
-
-  return details.audience.filter((member) => {
-    const matchesSearch =
-      !searchTerm ||
-      [member.name, member.campaign, member.email, member.phone]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-    const matchesFilter =
-      audienceFilter.value === "all" ||
-      (audienceFilter.value === "verified" && member.isVerified) ||
-      (audienceFilter.value === "not-verified" && !member.isVerified) ||
-      (audienceFilter.value === "with-transaction" && member.hasTransaction) ||
-      (audienceFilter.value === "without-transaction" &&
-        !member.hasTransaction);
-
-    return matchesSearch && matchesFilter;
-  });
-});
-
-/** Calculates the final valid audience table page after a search or filter change. */
-const audienceLastPage = computed(() =>
-  Math.max(1, Math.ceil(filteredAudience.value.length / tablePageSize)),
-);
-
-/** Selects the audience rows visible on the current page. */
-const pagedAudience = computed(() => {
-  const start = (audiencePage.value - 1) * tablePageSize;
-  return filteredAudience.value.slice(start, start + tablePageSize);
-});
+/** Moves the referred-audience table to another page. */
+const changeAudiencePage = (page: number): void => {
+  void fetchPromoterAudiences(props.promoterId, page).catch(() => undefined);
+};
 
 /** Keeps the current tab and period URL compact while preserving defaults implicitly. */
 const syncRouteState = (): void => {
@@ -211,15 +246,21 @@ const selectPeriod = (period: PromoterPeriod): void => {
 };
 
 /** Selects an audience filter and closes the associated dropdown menu. */
-const selectAudienceFilter = (filter: PromoterAudienceFilter): void => {
-  audienceFilter.value = filter;
-  audiencePage.value = 1;
+const selectAudienceFilter = (filter: PromoterAudienceStatusFilter): void => {
   audienceDropdown.value?.closeDropdown();
+  void setPromoterAudiencesStatus(props.promoterId, filter).catch(
+    () => undefined,
+  );
 };
 
-/** Opens the current fixture profile in the validation-only edit form. */
+/** Opens the edit form for the loaded promoter. */
 const openEditPromoterModal = (): void => {
   void editPromoterModal.value?.open();
+};
+
+/** Opens the delete confirmation for the loaded promoter. */
+const openDeletePromoterModal = (): void => {
+  void deletePromoterModal.value?.open();
 };
 
 watch(searchInput, (value) => updateAudienceSearch(value));
@@ -232,6 +273,10 @@ watch(
   { flush: "sync" },
 );
 
+watch(activePeriod, (period, previous) => {
+  if (period !== previous && hasLoaded.value) refreshMetrics();
+});
+
 watch(
   () => route.query,
   () => applyRouteState(),
@@ -239,19 +284,33 @@ watch(
 );
 
 watch(
-  audienceLastPage,
-  (lastPage) => {
-    if (audiencePage.value > lastPage) audiencePage.value = lastPage;
+  () => props.promoterId,
+  () => {
+    resetPromoterProfile();
+    searchInput.value = "";
+    hasLoaded.value = false;
+    void loadPromoter();
   },
-  { immediate: true },
 );
+
+onMounted(() => {
+  resetPromoterProfile();
+  void loadPromoter();
+});
 </script>
 
 <template>
-  <div
-    v-if="profile && promoterDetails"
-    class="flex min-w-0 w-full flex-col gap-6"
-  >
+  <PromoterDetailShimmer v-if="!hasLoaded" />
+
+  <AppErrorState
+    v-else-if="loadFailed"
+    heading="We couldn't load this promoter"
+    description="Something went wrong while fetching the promoter profile. Please try again."
+    :retrying="fetchingPromoterDetails"
+    @retry="loadPromoter"
+  />
+
+  <div v-else-if="profile && selectedPromoter" class="flex min-w-0 w-full flex-col gap-6">
     <AppHeading
       title="Promoters Profile"
       subtitle="Manage and monitor promoters performance"
@@ -262,15 +321,23 @@ watch(
     >
       <div class="flex min-w-0 items-center gap-4">
         <img
-          :src="profile.avatar"
-          :alt="`${profile.profileName} profile photo`"
+          v-if="profile.hasAvatar"
+          :src="profile.avatarUrl"
+          :alt="`${profile.name} profile photo`"
           class="h-22 w-22 shrink-0 rounded-full border border-dashboard-card-border object-cover"
         />
+        <span
+          v-else
+          class="flex h-22 w-22 shrink-0 items-center justify-center rounded-full border border-dashboard-card-border bg-dashboard-bg-dark text-2xl font-medium text-dashboard-heading"
+          aria-hidden="true"
+        >
+          {{ profile.initials }}
+        </span>
         <div class="min-w-0">
           <h2
             class="truncate text-xl font-medium tracking-tight text-dashboard-heading"
           >
-            {{ profile.profileName }}
+            {{ profile.name }}
           </h2>
           <p class="mt-1 text-sm text-dashboard-text">{{ profile.campaign }}</p>
           <div
@@ -291,17 +358,33 @@ watch(
           </div>
         </div>
       </div>
-      <AppButton
-        type="button"
-        size="sm"
-        color="primary"
-        class="w-fit shrink-0 !px-5 !py-2.5"
-        aria-label="Edit promoter profile"
-        @click="openEditPromoterModal"
-      >
-        <Icon name="vent:profile-add" size="1.1rem" />
-        Edit Profile
-      </AppButton>
+      <div class="flex shrink-0 flex-wrap gap-3">
+        <AppButton
+          type="button"
+          size="sm"
+          color="neutral"
+          outlined
+          :block="false"
+          class="w-fit !px-5 !py-2.5"
+          aria-label="Delete promoter"
+          @click="openDeletePromoterModal"
+        >
+          <Icon name="vent:trash" size="1.1rem" />
+          Delete
+        </AppButton>
+        <AppButton
+          type="button"
+          size="sm"
+          color="primary"
+          :block="false"
+          class="w-fit !px-5 !py-2.5"
+          aria-label="Edit promoter profile"
+          @click="openEditPromoterModal"
+        >
+          <Icon name="vent:profile-add" size="1.1rem" />
+          Edit Profile
+        </AppButton>
+      </div>
     </section>
 
     <section
@@ -317,16 +400,16 @@ watch(
       </div>
       <div class="min-w-0 flex items-start flex-col">
         <p class="text-sm text-dashboard-text">App Referral Link</p>
-        <AppClipBoard :text="profile.appLink" icon-size="1rem">
-          <span class="truncate text-sm text-dashboard-heading">{{
+        <AppClipBoard :text="profile.appLink" icon-size="1rem" class="min-w-0 max-w-full">
+          <span class="min-w-0 truncate text-sm text-dashboard-heading">{{
             profile.appLink
           }}</span>
         </AppClipBoard>
       </div>
       <div class="min-w-0 flex items-start flex-col">
         <p class="text-sm text-dashboard-text">Web Referral Link</p>
-        <AppClipBoard :text="profile.webLink" icon-size="1rem">
-          <span class="truncate text-sm text-dashboard-heading">{{
+        <AppClipBoard :text="profile.webLink" icon-size="1rem" class="min-w-0 max-w-full">
+          <span class="min-w-0 truncate text-sm text-dashboard-heading">{{
             profile.webLink
           }}</span>
         </AppClipBoard>
@@ -361,7 +444,7 @@ watch(
           <template #dropdown_body>
             <div class="min-w-40 space-y-1">
               <button
-                v-for="period in promoterPeriodOptions"
+                v-for="period in PROMOTER_PERIOD_OPTIONS"
                 :key="period.value"
                 type="button"
                 class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
@@ -381,13 +464,19 @@ watch(
         <div
           class="flex flex-col gap-6 border-t border-dashboard-card-border pt-5"
         >
+          <AppMetricRowsShimmer
+            v-if="fetchingPromoterDetails"
+            :rows="PROMOTER_METRIC_SHIMMER_ROWS.audiences"
+          />
           <AppMetricRows
-            :rows="promoterDetails.metricRows.audiences"
-            aria-label="Promoter summary metrics"
+            v-else-if="metricRows.audiences"
+            :rows="metricRows.audiences"
+            aria-label="Promoter audience metrics"
           />
           <TableComponent
             :headings="tableHeadings"
-            :body="pagedAudience"
+            :body="audienceRows"
+            :is-loading="fetchingPromoterAudiences"
             empty-heading="No referred audience found"
             empty-subtitle="Try changing the search text or active filter."
           >
@@ -408,25 +497,20 @@ watch(
                         type="button"
                         class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
                       >
-                        Filter by:
-                        {{
-                          audienceFilterOptions.find(
-                            (option) => option.value === audienceFilter,
-                          )?.label ?? "All"
-                        }}
+                        Filter by: {{ activeAudienceFilterLabel }}
                         <Icon name="vent:arrow-down" size="0.9rem" />
                       </button>
                     </template>
                     <template #dropdown_body>
                       <div class="min-w-44 space-y-1">
                         <button
-                          v-for="option in audienceFilterOptions"
+                          v-for="option in PROMOTER_AUDIENCE_FILTER_OPTIONS"
                           :key="option.value"
                           type="button"
                           class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
                           :class="{
                             'bg-dashboard-bg-dark':
-                              audienceFilter === option.value,
+                              promoterAudiencesStatus === option.value,
                           }"
                           @click="selectAudienceFilter(option.value)"
                         >
@@ -444,7 +528,7 @@ watch(
                 :color="rowData.hasTransaction ? 'green' : 'red'"
                 class="text-xs"
               >
-                {{ rowData.hasTransaction ? "Yes" : "NO" }}
+                {{ rowData.hasTransaction ? "Yes" : "No" }}
               </AppPills>
             </template>
 
@@ -459,10 +543,10 @@ watch(
 
             <template #table-footer>
               <TableComponentPagination
-                :page="audiencePage"
-                :per-page="tablePageSize"
-                :total-items="filteredAudience.length"
-                @change-page="audiencePage = $event"
+                :page="promoterAudiencesPage"
+                :per-page="promoterAudiencesPerPage"
+                :total-items="promoterAudiencesTotal"
+                @change-page="changeAudiencePage"
               />
             </template>
           </TableComponent>
@@ -475,18 +559,31 @@ watch(
         #[tab]
       >
         <div class="border-t border-dashboard-card-border pt-5">
+          <AppMetricRowsShimmer
+            v-if="fetchingPromoterDetails"
+            :rows="PROMOTER_METRIC_SHIMMER_ROWS[tab]"
+          />
           <AppMetricRows
-            :rows="promoterDetails.metricRows[tab]"
-            aria-label="Promoter summary metrics"
+            v-else-if="metricRows[tab]"
+            :rows="metricRows[tab]!"
+            aria-label="Promoter transaction metrics"
+          />
+          <AppEmptyState
+            v-else
+            heading="Transaction figures unavailable"
+            empty-table-subtitle="You don't have permission to view this promoter's transaction figures."
+            height="16rem"
+            hide-image
           />
         </div>
       </template>
     </AppTab>
 
-    <PromoterEditModal
-      ref="editPromoterModal"
-      :promoter="promoterDetails.promoter"
-      :campaign-options="campaignOptions"
+    <PromoterEditModal ref="editPromoterModal" :promoter="selectedPromoter" />
+    <PromoterDeleteModal
+      ref="deletePromoterModal"
+      :promoter-ids="[selectedPromoter.id]"
+      redirect-on-delete
     />
   </div>
 
@@ -499,7 +596,7 @@ watch(
       Promoter not found
     </h1>
     <p class="mt-2 max-w-md text-sm text-dashboard-text">
-      This promoter does not exist in the current fixture data.
+      This promoter does not exist or has been deleted.
     </p>
     <NuxtLink
       to="/promoters"

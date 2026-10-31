@@ -1,93 +1,133 @@
 <script setup lang="ts">
 import { useVuelidate } from "@vuelidate/core";
-import { email, helpers, required } from "@vuelidate/validators";
-import type { AppDropdown } from "#components";
-import type { Promoter } from "../composables/usePromoterMockData";
+import { email, helpers, maxLength, required } from "@vuelidate/validators";
+import type {
+  IPromoter,
+  IUpdatePromoterPayload,
+} from "../composables/usePromotersStore";
 
 interface ModalController {
   showDialogBox: () => void;
   hideDialogBox: () => void;
 }
 
-interface PromoterEditPayload {
+/** Editable promoter profile fields. */
+interface IPromoterEditForm {
   name: string;
   email: string;
   phone: string;
-  campaign: string;
+  referralCode: string;
+  campaignId: string;
 }
 
 const props = defineProps<{
-  promoter: Promoter;
-  campaignOptions: string[];
+  promoter: IPromoter;
 }>();
 
+const { updatePromoter, updatingPromoter } = usePromotersStore();
 const modal = ref<ModalController | null>(null);
-const campaignDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
-const form = reactive<PromoterEditPayload>({
-  name: props.promoter.name,
-  email: props.promoter.email,
-  phone: props.promoter.phone,
-  campaign: props.promoter.campaign,
+const form = reactive<IPromoterEditForm>({
+  name: "",
+  email: "",
+  phone: "",
+  referralCode: "",
+  campaignId: "",
 });
 
-/** Defines validation feedback for editable promoter profile fields. */
+/** Validation rules mirroring the update endpoint's request rules. */
 const validations = computed(() => ({
   name: {
     required: helpers.withMessage("Full name is required", required),
+    maxLength: helpers.withMessage(
+      "Name must be 255 characters or fewer",
+      maxLength(255),
+    ),
   },
   email: {
     required: helpers.withMessage("Email address is required", required),
     email: helpers.withMessage("Enter a valid email address", email),
+    maxLength: helpers.withMessage(
+      "Email must be 255 characters or fewer",
+      maxLength(255),
+    ),
   },
   phone: {
-    required: helpers.withMessage("Phone number is required", required),
+    maxLength: helpers.withMessage(
+      "Phone must be 50 characters or fewer",
+      maxLength(50),
+    ),
   },
-  campaign: {
+  referralCode: {
+    required: helpers.withMessage("Referral code is required", required),
+    maxLength: helpers.withMessage(
+      "Referral code must be 50 characters or fewer",
+      maxLength(50),
+    ),
+  },
+  campaignId: {
     required: helpers.withMessage("Select a campaign", required),
   },
 }));
 
 const v$ = useVuelidate(validations, form);
 
-/** Restores profile values supplied by the fixture-backed detail page. */
+/** Returns the first validation message for a field, or an empty string. */
+const fieldError = (field: keyof IPromoterEditForm): string =>
+  v$.value[field].$error ? String(v$.value[field].$errors[0]?.$message ?? "") : "";
+
+/** Restores the form from the current promoter record. */
 const resetForm = (): void => {
-  form.name = props.promoter.name;
-  form.email = props.promoter.email;
-  form.phone = props.promoter.phone;
-  form.campaign = props.promoter.campaign;
+  form.name = props.promoter.name ?? "";
+  form.email = props.promoter.email ?? "";
+  form.phone = props.promoter.phone ?? "";
+  form.referralCode = props.promoter.referralCode ?? "";
+  form.campaignId = props.promoter.campaignId ?? "";
   v$.value.$reset();
 };
 
-/** Opens the edit form with the latest supplied promoter profile values. */
+/** Opens the edit form with the latest promoter values. */
 const open = (): void => {
   resetForm();
   modal.value?.showDialogBox();
 };
 
-/** Closes the edit form without changing the fixture. */
+/** Closes the edit form without saving. */
 const close = (): void => {
   modal.value?.hideDialogBox();
 };
 
-/** Assigns a campaign and dismisses the campaign selection menu. */
-const selectCampaign = (campaign: string): void => {
-  form.campaign = campaign;
-  v$.value.campaign.$touch();
-  campaignDropdown.value?.closeDropdown();
+/** Builds a payload containing only the fields that changed. */
+const buildChanges = (): IUpdatePromoterPayload => {
+  const changes: IUpdatePromoterPayload = {};
+  if (form.name !== props.promoter.name) changes.name = form.name;
+  if (form.email !== props.promoter.email) changes.email = form.email;
+  if (form.phone !== (props.promoter.phone ?? "")) changes.phone = form.phone;
+  if (form.referralCode !== props.promoter.referralCode) {
+    changes.referralCode = form.referralCode;
+  }
+  if (form.campaignId !== props.promoter.campaignId) {
+    changes.campaignId = form.campaignId;
+  }
+  return changes;
 };
 
-/** Validates edits locally and confirms that fixture data remains unchanged. */
+/** Validates the form and saves any changed fields. */
 const submit = async (): Promise<void> => {
-  const isValid = await v$.value.$validate();
-  if (!isValid) return;
+  v$.value.$touch();
+  if (v$.value.$invalid) return;
 
-  close();
-  useToastHandler().triggerToast(
-    "Promoter profile changes were validated locally and were not saved.",
-    "success",
-    "Profile validated",
-    "large",
-  );
+  const changes = buildChanges();
+  if (!Object.keys(changes).length) {
+    close();
+    return;
+  }
+
+  try {
+    await updatePromoter(props.promoter.id, changes);
+    close();
+  } catch {
+    // Handled in the store via ApiErrorHandler.
+  }
 };
 
 defineExpose({ open, close });
@@ -95,7 +135,7 @@ defineExpose({ open, close });
 
 <template>
   <AppModal ref="modal" desktop-width="680px">
-    <form class="flex pb-1 md:min-h-[760px] flex-col" novalidate @submit.prevent="submit">
+    <form class="flex flex-col pb-1" novalidate @submit.prevent="submit">
       <div class="pb-5">
         <h2 class="text-2xl font-medium tracking-tight text-dashboard-heading">
           Edit Profile
@@ -107,7 +147,7 @@ defineExpose({ open, close });
         <PromoterFormField
           label="Full Name"
           for="edit-promoter-name"
-          :error="v$.name.$error ? String(v$.name.$errors[0]?.$message ?? '') : ''"
+          :error="fieldError('name')"
         >
           <input
             id="edit-promoter-name"
@@ -122,7 +162,7 @@ defineExpose({ open, close });
         <PromoterFormField
           label="Email Address"
           for="edit-promoter-email"
-          :error="v$.email.$error ? String(v$.email.$errors[0]?.$message ?? '') : ''"
+          :error="fieldError('email')"
         >
           <input
             id="edit-promoter-email"
@@ -134,91 +174,75 @@ defineExpose({ open, close });
           />
         </PromoterFormField>
 
-        <PromoterFormField
-          label="Phone"
-          for="edit-promoter-phone"
-          :error="v$.phone.$error ? String(v$.phone.$errors[0]?.$message ?? '') : ''"
-        >
-          <input
-            id="edit-promoter-phone"
-            v-model.trim="form.phone"
-            type="tel"
-            autocomplete="tel"
-            :aria-invalid="v$.phone.$error"
-            @blur="v$.phone.$touch()"
-          />
-        </PromoterFormField>
-
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <PromoterFormField label="Date" for="edit-promoter-date">
+          <PromoterFormField
+            label="Phone (optional)"
+            for="edit-promoter-phone"
+            :error="fieldError('phone')"
+          >
             <input
-              id="edit-promoter-date"
-              :value="promoter.joinedDate"
-              type="text"
-              disabled
-              aria-label="Joined date"
-              class="cursor-not-allowed opacity-70"
+              id="edit-promoter-phone"
+              v-model.trim="form.phone"
+              type="tel"
+              autocomplete="tel"
+              :aria-invalid="v$.phone.$error"
+              @blur="v$.phone.$touch()"
             />
           </PromoterFormField>
 
-          <PromoterFormField label="Referral Code" for="edit-promoter-referral-code">
+          <PromoterFormField
+            label="Referral Code"
+            for="edit-promoter-referral-code"
+            :error="fieldError('referralCode')"
+          >
             <input
               id="edit-promoter-referral-code"
-              :value="promoter.referralCode"
+              v-model.trim="form.referralCode"
               type="text"
-              disabled
-              aria-label="Referral code"
-              class="cursor-not-allowed opacity-70"
+              autocomplete="off"
+              :aria-invalid="v$.referralCode.$error"
+              @blur="v$.referralCode.$touch()"
             />
           </PromoterFormField>
         </div>
+        <p class="-mt-2 text-xs text-dashboard-text">
+          Changing the referral code regenerates the app and web referral links.
+        </p>
 
         <PromoterFormField
           label="Campaign"
           for="edit-promoter-campaign"
-          :error="v$.campaign.$error ? String(v$.campaign.$errors[0]?.$message ?? '') : ''"
+          :error="fieldError('campaignId')"
         >
-          <AppDropdown
-            ref="campaignDropdown"
-            position="left"
-            :width-is-finite="false"
-            :container-full="true"
-          >
-            <button
-              id="edit-promoter-campaign"
-              type="button"
-              class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
-              :aria-invalid="v$.campaign.$error"
-              aria-haspopup="listbox"
-            >
-              {{ form.campaign }}
-              <Icon name="vent:arrow-down" size="1rem" class="shrink-0 text-dashboard-text" />
-            </button>
-            <template #dropdown_body>
-              <div role="listbox" aria-label="Campaign" class="max-h-64 min-w-56 space-y-1 overflow-y-auto">
-                <button
-                  v-for="campaign in campaignOptions"
-                  :key="campaign"
-                  type="button"
-                  role="option"
-                  :aria-selected="form.campaign === campaign"
-                  class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                  :class="{ 'bg-dashboard-bg-dark': form.campaign === campaign }"
-                  @click="selectCampaign(campaign)"
-                >
-                  {{ campaign }}
-                </button>
-              </div>
-            </template>
-          </AppDropdown>
+          <PromoterCampaignSelect
+            id="edit-promoter-campaign"
+            v-model="form.campaignId"
+            :invalid="v$.campaignId.$error"
+            :fallback-label="promoter.campaignName"
+            @selected="v$.campaignId.$touch()"
+          />
         </PromoterFormField>
       </div>
 
-      <div class="mt-auto flex flex-col-reverse gap-3 pt-8 sm:flex-row sm:justify-start">
-        <AppButton size="md" type="button" :block="false" outlined color="primary" @click="close">
+      <div class="flex flex-col-reverse gap-3 pt-8 sm:flex-row sm:justify-start">
+        <AppButton
+          size="md"
+          type="button"
+          :block="false"
+          outlined
+          color="primary"
+          :disabled="updatingPromoter"
+          @click="close"
+        >
           Cancel
         </AppButton>
-        <AppButton size="md" type="submit" :block="false" color="primary">
+        <AppButton
+          size="md"
+          type="submit"
+          :block="false"
+          color="primary"
+          :loading="updatingPromoter"
+        >
           Save changes
         </AppButton>
       </div>

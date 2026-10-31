@@ -1,108 +1,127 @@
 <script setup lang="ts">
 import { useVuelidate } from "@vuelidate/core";
-import { email, helpers, required } from "@vuelidate/validators";
-import type { AppDropdown } from "#components";
+import {
+  email,
+  helpers,
+  maxLength,
+  required,
+  url,
+} from "@vuelidate/validators";
+import type { ICreatePromoterPayload } from "../composables/usePromotersStore";
 
 interface ModalController {
   showDialogBox: () => void;
   hideDialogBox: () => void;
 }
 
-interface PromoterCreatePayload {
+/** Form model for onboarding a promoter. */
+interface IPromoterCreateForm {
+  campaignId: string;
   name: string;
   email: string;
   phone: string;
-  joinedDate: string;
   referralCode: string;
-  campaign: string;
-  image: File | null;
+  avatarUrl: string;
 }
 
-const props = defineProps<{
-  campaignOptions: string[];
-}>();
-
+const { createPromoter, creatingPromoter, promotersCampaignId } =
+  usePromotersStore();
 const modal = ref<ModalController | null>(null);
-const campaignDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
-const form = reactive<PromoterCreatePayload>({
+const form = reactive<IPromoterCreateForm>({
+  campaignId: "",
   name: "",
   email: "",
   phone: "",
-  joinedDate: "2026-04-01",
   referralCode: "",
-  campaign: "Outdoor Movie Rave 2.0 (OAU)",
-  image: null,
+  avatarUrl: "",
 });
 
-/** Defines validation feedback for a locally validated promoter draft. */
+/** Validation rules mirroring the onboarding endpoint's request rules. */
 const validations = computed(() => ({
+  campaignId: {
+    required: helpers.withMessage("Select a campaign", required),
+  },
   name: {
     required: helpers.withMessage("Full name is required", required),
+    maxLength: helpers.withMessage(
+      "Name must be 255 characters or fewer",
+      maxLength(255),
+    ),
   },
   email: {
     required: helpers.withMessage("Email address is required", required),
     email: helpers.withMessage("Enter a valid email address", email),
+    maxLength: helpers.withMessage(
+      "Email must be 255 characters or fewer",
+      maxLength(255),
+    ),
   },
   phone: {
-    required: helpers.withMessage("Phone number is required", required),
-  },
-  joinedDate: {
-    required: helpers.withMessage("Date is required", required),
+    maxLength: helpers.withMessage(
+      "Phone must be 50 characters or fewer",
+      maxLength(50),
+    ),
   },
   referralCode: {
-    required: helpers.withMessage("Referral code is required", required),
+    maxLength: helpers.withMessage(
+      "Referral code must be 50 characters or fewer",
+      maxLength(50),
+    ),
   },
-  campaign: {
-    required: helpers.withMessage("Select a campaign", required),
+  avatarUrl: {
+    url: helpers.withMessage("Enter a valid image URL", url),
+    maxLength: helpers.withMessage("URL is too long", maxLength(2048)),
   },
 }));
 
 const v$ = useVuelidate(validations, form);
 
-/** Restores the screenshot-backed creation defaults and validation state. */
+/** Returns the first validation message for a field, or an empty string. */
+const fieldError = (field: keyof IPromoterCreateForm): string =>
+  v$.value[field].$error ? String(v$.value[field].$errors[0]?.$message ?? "") : "";
+
+/** Clears the form, preselecting the list's active campaign filter. */
 const resetForm = (): void => {
+  form.campaignId = promotersCampaignId.value;
   form.name = "";
   form.email = "";
   form.phone = "";
-  form.joinedDate = "2026-04-01";
   form.referralCode = "";
-  form.campaign = props.campaignOptions.includes("Outdoor Movie Rave 2.0 (OAU)")
-    ? "Outdoor Movie Rave 2.0 (OAU)"
-    : (props.campaignOptions[0] ?? "");
-  form.image = null;
+  form.avatarUrl = "";
   v$.value.$reset();
 };
 
-/** Opens a fresh local promoter draft without persisting any state. */
+/** Opens a fresh promoter form. */
 const open = (): void => {
   resetForm();
   modal.value?.showDialogBox();
 };
 
-/** Closes the form without persisting the local draft. */
+/** Closes the form without creating a promoter. */
 const close = (): void => {
   modal.value?.hideDialogBox();
 };
 
-/** Updates the assigned campaign and closes the selection menu. */
-const selectCampaign = (campaign: string): void => {
-  form.campaign = campaign;
-  v$.value.campaign.$touch();
-  campaignDropdown.value?.closeDropdown();
-};
-
-/** Validates the fixture-only request and acknowledges that no record was created. */
+/** Validates the form and onboards the promoter, omitting empty optional fields. */
 const submit = async (): Promise<void> => {
-  const isValid = await v$.value.$validate();
-  if (!isValid) return;
+  v$.value.$touch();
+  if (v$.value.$invalid) return;
 
-  close();
-  useToastHandler().triggerToast(
-    "Promoter details were validated locally and were not created.",
-    "success",
-    "Promoter validated",
-    "large",
-  );
+  const payload: ICreatePromoterPayload = {
+    campaignId: form.campaignId,
+    name: form.name,
+    email: form.email,
+    phone: form.phone || undefined,
+    referralCode: form.referralCode || undefined,
+    avatarUrl: form.avatarUrl || undefined,
+  };
+
+  try {
+    await createPromoter(payload);
+    close();
+  } catch {
+    // Handled in the store via ApiErrorHandler.
+  }
 };
 
 defineExpose({ open, close });
@@ -124,7 +143,7 @@ defineExpose({ open, close });
         <PromoterFormField
           label="Full Name"
           for="new-promoter-name"
-          :error="v$.name.$error ? String(v$.name.$errors[0]?.$message ?? '') : ''"
+          :error="fieldError('name')"
         >
           <input
             id="new-promoter-name"
@@ -140,7 +159,7 @@ defineExpose({ open, close });
         <PromoterFormField
           label="Email Address"
           for="new-promoter-email"
-          :error="v$.email.$error ? String(v$.email.$errors[0]?.$message ?? '') : ''"
+          :error="fieldError('email')"
         >
           <input
             id="new-promoter-email"
@@ -153,48 +172,34 @@ defineExpose({ open, close });
           />
         </PromoterFormField>
 
-        <PromoterFormField
-          label="Phone"
-          for="new-promoter-phone"
-          :error="v$.phone.$error ? String(v$.phone.$errors[0]?.$message ?? '') : ''"
-        >
-          <input
-            id="new-promoter-phone"
-            v-model.trim="form.phone"
-            type="tel"
-            autocomplete="tel"
-            placeholder="+234-"
-            :aria-invalid="v$.phone.$error"
-            @blur="v$.phone.$touch()"
-          />
-        </PromoterFormField>
-
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <PromoterFormField
-            label="Date"
-            for="new-promoter-date"
-            :error="v$.joinedDate.$error ? String(v$.joinedDate.$errors[0]?.$message ?? '') : ''"
+            label="Phone (optional)"
+            for="new-promoter-phone"
+            :error="fieldError('phone')"
           >
-            <AppDatePicker
-              id="new-promoter-date"
-              v-model="form.joinedDate"
-              placeholder="Select date"
-              :invalid="v$.joinedDate.$error"
-              @closed="v$.joinedDate.$touch()"
+            <input
+              id="new-promoter-phone"
+              v-model.trim="form.phone"
+              type="tel"
+              autocomplete="tel"
+              placeholder="+234-"
+              :aria-invalid="v$.phone.$error"
+              @blur="v$.phone.$touch()"
             />
           </PromoterFormField>
 
           <PromoterFormField
-            label="Referral Code"
+            label="Referral Code (optional)"
             for="new-promoter-referral-code"
-            :error="v$.referralCode.$error ? String(v$.referralCode.$errors[0]?.$message ?? '') : ''"
+            :error="fieldError('referralCode')"
           >
             <input
               id="new-promoter-referral-code"
               v-model.trim="form.referralCode"
               type="text"
               autocomplete="off"
-              placeholder="e.g. clement"
+              placeholder="Auto-generated if empty"
               :aria-invalid="v$.referralCode.$error"
               @blur="v$.referralCode.$touch()"
             />
@@ -204,61 +209,52 @@ defineExpose({ open, close });
         <PromoterFormField
           label="Campaign"
           for="new-promoter-campaign"
-          :error="v$.campaign.$error ? String(v$.campaign.$errors[0]?.$message ?? '') : ''"
+          :error="fieldError('campaignId')"
         >
-          <AppDropdown
-            ref="campaignDropdown"
-            position="left"
-            :width-is-finite="false"
-            :container-full="true"
-          >
-            <button
-              id="new-promoter-campaign"
-              type="button"
-              class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
-              :aria-invalid="v$.campaign.$error"
-              aria-haspopup="listbox"
-            >
-              {{ form.campaign || 'Select a campaign' }}
-              <Icon name="vent:arrow-down" size="1rem" class="shrink-0 text-dashboard-text" />
-            </button>
-            <template #dropdown_body>
-              <div role="listbox" aria-label="Campaign" class="max-h-64 min-w-56 space-y-1 overflow-y-auto">
-                <button
-                  v-for="campaign in campaignOptions"
-                  :key="campaign"
-                  type="button"
-                  role="option"
-                  :aria-selected="form.campaign === campaign"
-                  class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                  :class="{ 'bg-dashboard-bg-dark': form.campaign === campaign }"
-                  @click="selectCampaign(campaign)"
-                >
-                  {{ campaign }}
-                </button>
-              </div>
-            </template>
-          </AppDropdown>
+          <PromoterCampaignSelect
+            id="new-promoter-campaign"
+            v-model="form.campaignId"
+            :invalid="v$.campaignId.$error"
+            @selected="v$.campaignId.$touch()"
+          />
         </PromoterFormField>
 
-        <section aria-labelledby="new-promoter-image-heading">
-          <h3 id="new-promoter-image-heading" class="mb-2 text-xs text-input-label">
-            Upload Image <span class="text-dashboard-text">(optional)</span>
-          </h3>
-          <AppFileSelector
-            v-model="form.image"
-            variant="compact"
-            :allowed-types="['image/png', 'image/jpeg', 'image/jpg', 'image/webp']"
-            :max-size-in-mb="5"
+        <PromoterFormField
+          label="Avatar URL (optional)"
+          for="new-promoter-avatar"
+          :error="fieldError('avatarUrl')"
+        >
+          <input
+            id="new-promoter-avatar"
+            v-model.trim="form.avatarUrl"
+            type="url"
+            autocomplete="off"
+            placeholder="https://"
+            :aria-invalid="v$.avatarUrl.$error"
+            @blur="v$.avatarUrl.$touch()"
           />
-        </section>
+        </PromoterFormField>
       </div>
 
       <div class="flex flex-col-reverse gap-3 pt-5 sm:flex-row sm:justify-start">
-        <AppButton size="md" type="button" :block="false" outlined color="primary" @click="close">
+        <AppButton
+          size="md"
+          type="button"
+          :block="false"
+          outlined
+          color="primary"
+          :disabled="creatingPromoter"
+          @click="close"
+        >
           Cancel
         </AppButton>
-        <AppButton size="md" type="submit" :block="false" color="primary">
+        <AppButton
+          size="md"
+          type="submit"
+          :block="false"
+          color="primary"
+          :loading="creatingPromoter"
+        >
           Add Promoter
         </AppButton>
       </div>

@@ -948,9 +948,9 @@ export const useCampaignStore = () => {
     },
 
     /**
-     * Fetches one page of promoters assigned to a campaign.
-     * Lives here until the promoters layer has its own API store; move it to
-     * `usePromoterStore` once that exists.
+     * Fetches one page of promoters assigned to a campaign for the campaign
+     * detail table. Kept separate from `usePromotersStore` so the campaign
+     * table's page/search state doesn't clash with the promoters list.
      */
     async fetchCampaignPromoters(
       campaignId: string,
