@@ -1,20 +1,28 @@
 <script setup lang="ts">
 import type { AppDropdown } from "#components";
+import { DateFormatter } from "~/utils/helpers/DateFormatter";
 import { FlagFetch } from "~/utils/helpers/Flags";
 import type { TabsData } from "~/utils/types/misc/Tabs";
+import { useAudienceStore } from "../composables/useAudienceStore";
 import {
-  audiencePeriodOptions,
+  AUDIENCE_METRIC_SHIMMER_ROWS,
+  AUDIENCE_PERIOD_OPTIONS,
+  buildAudienceMetricRows,
   type AudienceDetailTab,
   type AudiencePeriod,
-} from "../composables/useAudienceMockData";
-import { useAudienceStore } from "../composables/useAudienceStore";
+} from "../utils/AudienceProfile";
 
 const props = defineProps<{
   audienceId: string;
 }>();
 
-const { selectedAudience, fetchingAudienceDetails, fetchAudienceDetails } =
-  useAudienceStore();
+const {
+  selectedAudience,
+  fetchingAudienceDetails,
+  fetchAudienceDetails,
+  setAudienceProfileFilters,
+  resetAudienceProfile,
+} = useAudienceStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -31,7 +39,7 @@ const detailTabs: Array<TabsData & { id: AudienceDetailTab }> = [
 ];
 
 const defaultTab: AudienceDetailTab = "transactions";
-const defaultPeriod: AudiencePeriod = "30d";
+const defaultPeriod: AudiencePeriod = "last_30_days";
 
 /** Reads one scalar value from a Nuxt query-string value. */
 const getQueryValue = (
@@ -50,7 +58,7 @@ const isAudienceDetailTab = (value: string): value is AudienceDetailTab =>
 
 /** Identifies a supported reporting period from a query-string value. */
 const isAudiencePeriod = (value: string): value is AudiencePeriod =>
-  audiencePeriodOptions.some((period) => period.value === value);
+  AUDIENCE_PERIOD_OPTIONS.some((period) => period.value === value);
 
 /** Normalizes the visible tab and period controls from the current route. */
 const getRouteState = (): {
@@ -73,42 +81,45 @@ const activePeriod = ref<AudiencePeriod>(initialRouteState.period);
 /** Template-ready profile view of the selected audience with fallbacks. */
 const profileView = computed(() => {
   const audience = selectedAudience.value;
-  const fullName = audience?.fullName || audience?.name || "Unnamed audience";
+  const fullName = audience?.name || "Unnamed audience";
 
   return {
     exists: Boolean(audience),
     fullName,
-    initial: (audience?.name || fullName).charAt(0).toUpperCase(),
-    level: audience?.level ?? "",
-    country: audience?.country || "Country not set",
+    initial: fullName.charAt(0).toUpperCase(),
+    level: audience?.kycLevelLabel ?? "",
+    country: audience?.country || audience?.countryCode || "Country not set",
     flagUrl: audience?.countryCode ? FlagFetch(audience.countryCode) : "",
     email: audience?.email || "—",
     phone: audience?.phone || "—",
-    lastTransaction: audience?.lastTransactionDate
-      ? `Last transaction ${audience.lastTransactionDate}`
+    lastTransaction: audience?.lastTransactionAt
+      ? `Last transaction ${DateFormatter.formatDate(audience.lastTransactionAt)}`
       : "No transactions yet",
-    promoter: audience?.promoter || "Unassigned",
-    hasTransaction: Boolean(audience?.hasTransaction),
-    metricRows: audience?.metricRows ?? {
-      transactions: [],
-      withdrawal: [],
-      utility: [],
-    },
+    campaign: audience?.campaignName || "No campaign",
+    promoter: audience?.promoterName || "Unassigned",
+    hasTransaction: Boolean(audience?.hasTransacted),
   };
 });
+
+/** Metric card rows per tab; `null` when transaction figures are hidden. */
+const metricRows = computed(() =>
+  buildAudienceMetricRows(selectedAudience.value?.metrics),
+);
 
 /** Resolves the dropdown label for the selected reporting period. */
 const activePeriodLabel = computed(
   () =>
-    audiencePeriodOptions.find((period) => period.value === activePeriod.value)
-      ?.label ?? "Last 30 days",
+    AUDIENCE_PERIOD_OPTIONS.find(
+      (period) => period.value === activePeriod.value,
+    )?.label ?? "Last 30 days",
 );
 
-/** Loads the audience profile, recording a failure for the error state. */
+/** Loads the audience profile for the active period, recording failures. */
 const loadAudience = async (): Promise<void> => {
-  hasLoaded.value = false;
   loadFailed.value = false;
   flagFailed.value = false;
+  setAudienceProfileFilters({ timeframe: activePeriod.value });
+
   try {
     await fetchAudienceDetails(props.audienceId);
   } catch {
@@ -116,6 +127,12 @@ const loadAudience = async (): Promise<void> => {
   } finally {
     hasLoaded.value = true;
   }
+};
+
+/** Refetches profile metrics after the period changes, keeping the page in place. */
+const refreshMetrics = (): void => {
+  setAudienceProfileFilters({ timeframe: activePeriod.value });
+  void fetchAudienceDetails(props.audienceId).catch(() => undefined);
 };
 
 /** Keeps the tab and period in the URL while leaving defaults implicit. */
@@ -158,33 +175,46 @@ watch(
   { flush: "sync" },
 );
 
+watch(activePeriod, (period, previous) => {
+  if (period !== previous && hasLoaded.value) refreshMetrics();
+});
+
 watch(
   () => route.query,
   () => applyRouteState(),
   { deep: true },
 );
 
-watch(() => props.audienceId, loadAudience, { immediate: true });
+watch(
+  () => props.audienceId,
+  () => {
+    resetAudienceProfile();
+    hasLoaded.value = false;
+    void loadAudience();
+  },
+);
+
+onMounted(() => {
+  resetAudienceProfile();
+  void loadAudience();
+});
+
+onBeforeUnmount(() => {
+  resetAudienceProfile();
+});
 </script>
 
 <template>
   <div class="flex min-w-0 w-full flex-col gap-8">
-    <AudienceDetailShimmer v-if="fetchingAudienceDetails || !hasLoaded" />
+    <AudienceDetailShimmer v-if="!hasLoaded" />
 
-    <section
+    <AppErrorState
       v-else-if="loadFailed"
-      class="flex flex-col items-center justify-center rounded-[14px] border border-dashboard-card-border bg-dashboard-bg px-6 py-16 text-center"
-    >
-      <h2 class="text-lg font-medium text-dashboard-heading">
-        We couldn't load this audience
-      </h2>
-      <p class="mt-2 max-w-md text-sm text-dashboard-text">
-        Something went wrong while fetching the audience details.
-      </p>
-      <AppButton type="button" size="md" class="mt-5" @click="loadAudience">
-        Retry
-      </AppButton>
-    </section>
+      heading="We couldn't load this audience"
+      description="Something went wrong while fetching the audience details. Please try again."
+      :retrying="fetchingAudienceDetails"
+      @retry="loadAudience"
+    />
 
     <section
       v-else-if="!profileView.exists"
@@ -237,9 +267,12 @@ watch(() => props.audienceId, loadAudience, { immediate: true });
             </AppPills>
           </div>
 
-          <p class="inline-flex items-center gap-1.5 text-sm text-dashboard-text">
-            <Icon name="vent:global" size="1rem" />
-            {{ profileView.country }}
+          <p class="inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-dashboard-text">
+            <span class="inline-flex items-center gap-1.5">
+              <Icon name="vent:global" size="1rem" />
+              {{ profileView.country }}
+            </span>
+            <span>{{ profileView.campaign }}</span>
           </p>
 
           <div
@@ -310,7 +343,7 @@ watch(() => props.audienceId, loadAudience, { immediate: true });
             <template #dropdown_body>
               <div class="min-w-40 space-y-1">
                 <button
-                  v-for="period in audiencePeriodOptions"
+                  v-for="period in AUDIENCE_PERIOD_OPTIONS"
                   :key="period.value"
                   type="button"
                   class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
@@ -328,9 +361,21 @@ watch(() => props.audienceId, loadAudience, { immediate: true });
 
         <template v-for="tab in detailTabs" :key="tab.id" #[tab.id]>
           <div class="border-t border-dashboard-card-border pt-5">
+            <AppMetricRowsShimmer
+              v-if="fetchingAudienceDetails"
+              :rows="AUDIENCE_METRIC_SHIMMER_ROWS[tab.id]"
+            />
             <AppMetricRows
-              :rows="profileView.metricRows[tab.id]"
+              v-else-if="metricRows[tab.id]"
+              :rows="metricRows[tab.id]!"
               :aria-label="`Audience ${tab.name.toLowerCase()} metrics`"
+            />
+            <AppEmptyState
+              v-else
+              heading="Transaction figures unavailable"
+              empty-table-subtitle="You don't have permission to view this audience's transaction figures."
+              height="16rem"
+              hide-image
             />
           </div>
         </template>

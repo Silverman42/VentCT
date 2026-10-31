@@ -1,40 +1,59 @@
 <script setup lang="ts">
 import { useDebounceFn } from "@vueuse/core";
 import type { AppDropdown } from "#components";
+import { formatCount } from "~/utils/helpers/AnalyticsFormatters";
 import type {
   ITableBodyData,
   ITableHeaderData,
 } from "~/utils/types/misc/TableComponent";
 import {
-  type AudienceVerificationFilter,
-  type IAudienceMember,
-  useAudienceMockData,
-} from "../composables/useAudienceMockData";
-import { useAudienceStore } from "../composables/useAudienceStore";
+  type AudienceStatusFilter,
+  useAudienceStore,
+} from "../composables/useAudienceStore";
+import { AUDIENCE_STATUS_FILTER_OPTIONS } from "../utils/AudienceProfile";
 
 interface NewModalController {
   open: () => Promise<void> | void;
 }
 
-const AUDIENCES_PER_PAGE = 10;
+/** Table-ready audience row with display fallbacks. */
+interface IAudienceRow extends ITableBodyData {
+  id: string;
+  name: string;
+  campaign: string;
+  email: string;
+  phone: string;
+  promoter: string;
+  hasTransaction: boolean;
+  isVerified: boolean;
+}
 
-const { campaignOptions, promoterOptions } = useAudienceMockData();
-const { audiences, metrics, fetchingAudiences, fetchAudiences } =
-  useAudienceStore();
+const {
+  audiences,
+  audienceStats,
+  fetchingAudiences,
+  audiencesPage,
+  audiencesPerPage,
+  audiencesTotal,
+  audiencesSearch,
+  audiencesStatus,
+  fetchAudiences,
+} = useAudienceStore();
 
 const route = useRoute();
 const router = useRouter();
 
 const filterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const audienceNewModal = ref<NewModalController | null>(null);
-const isApplyingRoute = ref(false);
+const hasLoaded = ref(false);
+const loadFailed = ref(false);
 
 const tableHeadings: ITableHeaderData[] = [
   { id: "name", name: "Name" },
-  { id: "campaign", name: "Campaign" },
-  { id: "email", name: "Email" },
-  { id: "phone", name: "Phone" },
-  { id: "promoter", name: "Promoter" },
+  { id: "campaign", name: "Campaign", isHiddenOnMobile: true },
+  { id: "email", name: "Email", isHiddenOnMobile: true },
+  { id: "phone", name: "Phone", isHiddenOnMobile: true },
+  { id: "promoter", name: "Promoter", isHiddenOnMobile: true },
   { id: "hasTransaction", name: "Transaction" },
   { id: "status", name: "Status" },
 ];
@@ -50,131 +69,154 @@ const getQueryValue = (
   return typeof scalarValue === "string" ? scalarValue : "";
 };
 
-/** Confirms that a query parameter matches an audience verification filter. */
-const isVerificationFilter = (
-  value: string,
-): value is AudienceVerificationFilter =>
-  value === "verified" || value === "not_verified";
+/** Confirms that a query parameter is a supported status filter. */
+const isStatusFilter = (value: string): value is AudienceStatusFilter =>
+  AUDIENCE_STATUS_FILTER_OPTIONS.some((option) => option.value === value);
 
-/** Extracts local table state from the active route query strings. */
+/** Normalizes the route query into audience-list controls. */
 const getRouteState = (): {
   search: string;
-  statusFilter: AudienceVerificationFilter | "all";
+  status: AudienceStatusFilter;
   page: number;
 } => {
   const requestedPage = Number.parseInt(getQueryValue(route.query.page), 10);
   const requestedStatus = getQueryValue(route.query.status);
 
   return {
-    search: getQueryValue(route.query.search),
-    statusFilter: isVerificationFilter(requestedStatus)
-      ? requestedStatus
-      : "all",
+    search: getQueryValue(route.query.search).trim(),
+    status: isStatusFilter(requestedStatus) ? requestedStatus : "all",
     page:
       Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1,
   };
 };
 
-const initialRouteState = getRouteState();
-const searchInput = ref(initialRouteState.search);
-const statusFilter = ref<AudienceVerificationFilter | "all">(
-  initialRouteState.statusFilter,
-);
-const currentPage = ref(initialRouteState.page);
+const searchInput = ref(getRouteState().search);
 
-/** Filters audience records according to active search string and status filter. */
-const filteredAudiences = computed(() => {
-  const searchTerm = searchInput.value.trim().toLocaleLowerCase();
-
-  return audiences.value.filter((member) => {
-    const matchesStatus =
-      statusFilter.value === "all" ||
-      (statusFilter.value === "verified" && member.isVerified) ||
-      (statusFilter.value === "not_verified" && !member.isVerified);
-
-    const matchesSearch =
-      !searchTerm ||
-      [
-        member.name,
-        member.campaign,
-        member.email,
-        member.phone,
-        member.promoter,
-      ]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(searchTerm);
-
-    return matchesStatus && matchesSearch;
-  });
-});
-
-/** Derives total pagination page count from the filtered records. */
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredAudiences.value.length / AUDIENCES_PER_PAGE)),
+/** Audience rows mapped from the API with explicit fallbacks. */
+const audienceRows = computed<IAudienceRow[]>(() =>
+  audiences.value.map((member) => ({
+    id: member.id,
+    name: member.name || "Unnamed audience",
+    campaign: member.campaignName || "—",
+    email: member.email || "—",
+    phone: member.phone || "—",
+    promoter: member.promoterName || "Unassigned",
+    hasTransaction: Boolean(member.hasTransacted),
+    isVerified: Boolean(member.isVerified),
+  })),
 );
 
-/** Selects the current ten-row page slice for table rendering. */
-const pagedAudiences = computed(() => {
-  const start = (currentPage.value - 1) * AUDIENCES_PER_PAGE;
-  return filteredAudiences.value.slice(start, start + AUDIENCES_PER_PAGE);
-});
+/** Summary cards built from the list response's summary block. */
+const summaryCards = computed(() => [
+  {
+    label: "Registered Audience",
+    value: formatCount(audienceStats.value.registeredTotal),
+    description: "Total number of registered audience",
+  },
+  {
+    label: "Verified Audience",
+    value: formatCount(audienceStats.value.verifiedTotal),
+    description: "Number of verified audience",
+  },
+  {
+    label: "Audience With Transaction",
+    value: formatCount(audienceStats.value.withTransactionTotal),
+    description: "Audience with transactions",
+  },
+  {
+    label: "Today's Registration",
+    value: formatCount(audienceStats.value.today),
+    description: "Number of audience that registered today",
+  },
+  {
+    label: "This Week Registration",
+    value: formatCount(audienceStats.value.thisWeek),
+    description: "Number of audience that registered this week",
+  },
+  {
+    label: "This Month Registration",
+    value: formatCount(audienceStats.value.thisMonth),
+    description: "Number of audience that registered this month",
+  },
+  {
+    label: "This Year Registration",
+    value: formatCount(audienceStats.value.thisYear),
+    description: "Number of audience that registered this year",
+  },
+  {
+    label: "Unverified Audience",
+    value: formatCount(audienceStats.value.unverifiedTotal),
+    description: "Audience that has not done their verification",
+  },
+]);
 
-/** Formats a status filter option into a user-facing label. */
-const getFilterLabel = (filter: AudienceVerificationFilter | "all"): string => {
-  if (filter === "verified") return "Verified";
-  if (filter === "not_verified") return "Not verified";
-  return "All";
-};
+/** Label for the active status filter. */
+const activeFilterLabel = computed(
+  () =>
+    AUDIENCE_STATUS_FILTER_OPTIONS.find(
+      (option) => option.value === audiencesStatus.value,
+    )?.label ?? "All",
+);
 
-/** Synchronizes list search, filter, and pagination state into URL query strings. */
-const syncRouteState = (): void => {
-  const nextQuery: Record<string, string> = {};
-
-  if (searchInput.value.trim()) nextQuery.search = searchInput.value.trim();
-  if (statusFilter.value !== "all") nextQuery.status = statusFilter.value;
-  if (currentPage.value > 1) nextQuery.page = String(currentPage.value);
-
-  const currentQuery = {
-    search: getQueryValue(route.query.search),
-    status: getQueryValue(route.query.status),
-    page: getQueryValue(route.query.page),
-  };
-
-  if (
-    currentQuery.search === (nextQuery.search ?? "") &&
-    currentQuery.status === (nextQuery.status ?? "") &&
-    currentQuery.page === (nextQuery.page ?? "")
-  ) {
-    return;
+/**
+ * Runs a list request while tracking first-load and failure state, so the
+ * shimmer and error section render independently of the table's refetch state.
+ */
+const runListRequest = async (
+  request: () => Promise<unknown>,
+): Promise<void> => {
+  loadFailed.value = false;
+  try {
+    await request();
+  } catch {
+    loadFailed.value = true;
+  } finally {
+    hasLoaded.value = true;
   }
-
-  void router.replace({ path: route.path, query: nextQuery });
 };
 
-/** Debounces route synchronization when typing into search input. */
-const syncDebouncedSearch = useDebounceFn(syncRouteState, 300);
-
-/** Applies route query parameter updates back into local controls. */
-const applyRouteState = (): void => {
-  const nextState = getRouteState();
-  isApplyingRoute.value = true;
-  searchInput.value = nextState.search;
-  statusFilter.value = nextState.statusFilter;
-  currentPage.value = nextState.page;
-  isApplyingRoute.value = false;
+/** Copies the route query into store filters and fetches the requested page. */
+const loadFromRoute = (): Promise<void> => {
+  const { search, status, page } = getRouteState();
+  audiencesSearch.value = search;
+  audiencesStatus.value = status;
+  return runListRequest(() => fetchAudiences(page));
 };
 
-/** Updates the active verification status filter and closes dropdown menu. */
-const selectFilter = (filter: AudienceVerificationFilter | "all"): void => {
-  statusFilter.value = filter;
+/** Writes list controls to compact route query values; the route watcher fetches. */
+const updateRouteQuery = (changes: {
+  search?: string;
+  status?: AudienceStatusFilter;
+  page?: number;
+}): void => {
+  const next = { ...getRouteState(), ...changes };
+  const query: Record<string, string> = {};
+  if (next.search) query.search = next.search;
+  if (next.status !== "all") query.status = next.status;
+  if (next.page > 1) query.page = String(next.page);
+  void router.replace({ path: route.path, query });
+};
+
+/** Pushes the search term to the route after the user stops typing. */
+const syncDebouncedSearch = useDebounceFn((term: string) => {
+  if (term.trim() === getRouteState().search) return;
+  updateRouteQuery({ search: term.trim(), page: 1 });
+}, 300);
+
+/** Updates the status filter, resets to page 1 and closes the dropdown. */
+const selectFilter = (status: AudienceStatusFilter): void => {
   filterDropdown.value?.closeDropdown();
+  updateRouteQuery({ status, page: 1 });
+};
+
+/** Moves the table to another page. */
+const changePage = (page: number): void => {
+  updateRouteQuery({ page });
 };
 
 /** Navigates to the single audience page when an audience row is clicked. */
 const openAudienceDetail = (row: ITableBodyData): void => {
-  const member = row as IAudienceMember;
-  void navigateTo(`/audiences/${member.id}`);
+  void navigateTo(`/audiences/${String(row.id)}`);
 };
 
 /** Opens the New Audience creation modal. */
@@ -182,178 +224,149 @@ const openNewAudienceModal = (): void => {
   void audienceNewModal.value?.open();
 };
 
-watch(
-  searchInput,
-  () => {
-    if (isApplyingRoute.value) return;
-    currentPage.value = 1;
-    syncDebouncedSearch();
-  },
-  { flush: "sync" },
-);
-
-watch(
-  statusFilter,
-  () => {
-    if (isApplyingRoute.value) return;
-    currentPage.value = 1;
-    syncRouteState();
-  },
-  { flush: "sync" },
-);
-
-watch(
-  currentPage,
-  () => {
-    if (!isApplyingRoute.value) syncRouteState();
-  },
-  { flush: "sync" },
-);
+watch(searchInput, (term) => syncDebouncedSearch(term));
 
 watch(
   () => route.query,
-  () => applyRouteState(),
-  { deep: true },
-);
-
-watch(
-  totalPages,
-  (lastPage) => {
-    if (currentPage.value > lastPage) currentPage.value = lastPage;
+  () => {
+    const { search } = getRouteState();
+    if (search !== searchInput.value.trim()) searchInput.value = search;
+    void loadFromRoute();
   },
-  { immediate: true },
 );
 
 onMounted(() => {
-  void fetchAudiences();
+  void loadFromRoute();
 });
 </script>
 
 <template>
-  <AudienceListShimmer v-if="fetchingAudiences" />
+  <AudienceListShimmer v-if="!hasLoaded" />
 
   <div v-else class="flex w-full flex-col gap-6">
-    <!-- Top Heading -->
     <AppHeading
       title="Audience"
       subtitle="View audience list, engagement and campaign participation"
     />
 
-    <!-- Summary Metric Cards (2 rows of 4 cards) -->
-    <section
-      class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-      aria-label="Audience summary metrics"
-    >
-      <article
-        v-for="metric in metrics"
-        :key="metric.label"
-        class="flex min-h-[116px] flex-col justify-between rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
-      >
-        <p class="text-xs text-dashboard-text font-normal">
-          {{ metric.label }}
-        </p>
-        <p class="mt-1 text-2xl font-medium tracking-tight text-dashboard-heading">
-          {{ metric.value }}
-        </p>
-        <p class="mt-1 text-[11px] text-dashboard-text">
-          {{ metric.description }}
-        </p>
-      </article>
-    </section>
-
-    <!-- Table Section -->
-    <TableComponent
-      :headings="tableHeadings"
-      :body="pagedAudiences"
-      clickable
-      empty-heading="No audience members found"
-      empty-subtitle="Try changing the search query or status filter."
-      @row-click="openAudienceDetail"
-    >
-      <template #table-heading>
-        <TableComponentHeader
-          v-model:search="searchInput"
-          table-name="Audience"
-          search-placeholder="Search ..."
-        >
-          <!-- Filters Slot -->
-          <template #filters>
-            <AppDropdown
-              ref="filterDropdown"
-              position="right"
-              :width-is-finite="false"
-            >
-              <template #default>
-                <button
-                  type="button"
-                  class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
-                >
-                  Filter by: {{ getFilterLabel(statusFilter) }}
-                  <Icon name="vent:arrow-down" size="0.9rem" />
-                </button>
-              </template>
-              <template #dropdown_body>
-                <div class="min-w-40 space-y-1">
-                  <button
-                    v-for="option in ['all', 'verified', 'not_verified'] as const"
-                    :key="option"
-                    type="button"
-                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                    :class="{ 'bg-dashboard-bg-dark': statusFilter === option }"
-                    @click="selectFilter(option)"
-                  >
-                    Filter by: {{ getFilterLabel(option) }}
-                  </button>
-                </div>
-              </template>
-            </AppDropdown>
-          </template>
-
-          <!-- Actions Slot -->
-          <template #actions>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-color-default px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-color-005"
-              aria-label="Create a new audience member"
-              @click="openNewAudienceModal"
-            >
-              <Icon name="vent:add" size="1rem" />
-              New Audience
-            </button>
-          </template>
-        </TableComponentHeader>
-      </template>
-
-      <!-- Transaction Pill Column -->
-      <template #col_hasTransaction="{ rowData }">
-        <AppPills :color="rowData.hasTransaction ? 'green' : 'red'">
-          {{ rowData.hasTransaction ? 'Yes' : 'NO' }}
-        </AppPills>
-      </template>
-
-      <!-- Verification Status Pill Column -->
-      <template #col_status="{ rowData }">
-        <AppPills :color="rowData.isVerified ? 'green' : 'orange'">
-          {{ rowData.isVerified ? 'Verified' : 'Not verified' }}
-        </AppPills>
-      </template>
-
-      <!-- Table Footer Pagination -->
-      <template #table-footer>
-        <TableComponentPagination
-          :page="currentPage"
-          :per-page="AUDIENCES_PER_PAGE"
-          :total-items="filteredAudiences.length"
-          @change-page="currentPage = $event"
-        />
-      </template>
-    </TableComponent>
-
-    <!-- Modals -->
-    <AudienceNewModal
-      ref="audienceNewModal"
-      :campaign-options="campaignOptions"
-      :promoter-options="promoterOptions"
+    <AppErrorState
+      v-if="loadFailed"
+      heading="We couldn't load audiences"
+      description="Something went wrong while fetching the audience list. Please try again."
+      :retrying="fetchingAudiences"
+      @retry="loadFromRoute"
     />
+
+    <template v-else>
+      <section
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        aria-label="Audience summary metrics"
+      >
+        <article
+          v-for="metric in summaryCards"
+          :key="metric.label"
+          class="flex min-h-[116px] flex-col justify-between rounded-[14px] border border-dashboard-card-border bg-dashboard-bg p-5"
+        >
+          <p class="text-xs text-dashboard-text font-normal">
+            {{ metric.label }}
+          </p>
+          <p
+            class="mt-1 text-2xl font-medium tracking-tight text-dashboard-heading"
+          >
+            {{ metric.value }}
+          </p>
+          <p class="mt-1 text-[11px] text-dashboard-text">
+            {{ metric.description }}
+          </p>
+        </article>
+      </section>
+
+      <TableComponent
+        :headings="tableHeadings"
+        :body="audienceRows"
+        :is-loading="fetchingAudiences"
+        clickable
+        empty-heading="No audience members found"
+        empty-subtitle="Try changing the search query or status filter."
+        @row-click="openAudienceDetail"
+      >
+        <template #table-heading>
+          <TableComponentHeader
+            v-model:search="searchInput"
+            table-name="Audience"
+            search-placeholder="Search ..."
+          >
+            <template #filters>
+              <AppDropdown
+                ref="filterDropdown"
+                position="right"
+                :width-is-finite="false"
+              >
+                <template #default>
+                  <button
+                    type="button"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-dashboard-card-border bg-dashboard-bg px-3 py-2.5 text-sm text-dashboard-heading transition hover:border-brand-color-default sm:w-auto"
+                  >
+                    Filter by: {{ activeFilterLabel }}
+                    <Icon name="vent:arrow-down" size="0.9rem" />
+                  </button>
+                </template>
+                <template #dropdown_body>
+                  <div class="min-w-44 space-y-1">
+                    <button
+                      v-for="option in AUDIENCE_STATUS_FILTER_OPTIONS"
+                      :key="option.value"
+                      type="button"
+                      class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                      :class="{
+                        'bg-dashboard-bg-dark': audiencesStatus === option.value,
+                      }"
+                      @click="selectFilter(option.value)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </template>
+              </AppDropdown>
+            </template>
+
+            <template #actions>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-color-default px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-color-005"
+                aria-label="Create a new audience member"
+                @click="openNewAudienceModal"
+              >
+                <Icon name="vent:add" size="1rem" />
+                New Audience
+              </button>
+            </template>
+          </TableComponentHeader>
+        </template>
+
+        <template #col_hasTransaction="{ rowData }">
+          <AppPills :color="rowData.hasTransaction ? 'green' : 'red'">
+            {{ rowData.hasTransaction ? "Yes" : "No" }}
+          </AppPills>
+        </template>
+
+        <template #col_status="{ rowData }">
+          <AppPills :color="rowData.isVerified ? 'green' : 'orange'">
+            {{ rowData.isVerified ? "Verified" : "Not verified" }}
+          </AppPills>
+        </template>
+
+        <template #table-footer>
+          <TableComponentPagination
+            :page="audiencesPage"
+            :per-page="audiencesPerPage"
+            :total-items="audiencesTotal"
+            @change-page="changePage"
+          />
+        </template>
+      </TableComponent>
+    </template>
+
+    <AudienceNewModal ref="audienceNewModal" />
   </div>
 </template>

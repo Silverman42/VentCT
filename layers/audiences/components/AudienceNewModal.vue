@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useVuelidate } from "@vuelidate/core";
-import { email, helpers, required } from "@vuelidate/validators";
+import { email, helpers, maxLength, required } from "@vuelidate/validators";
 import type { AppDropdown } from "#components";
 import {
   type ICreateAudiencePayload,
@@ -12,27 +12,16 @@ interface ModalController {
   hideDialogBox: () => void;
 }
 
-const props = withDefaults(
-  defineProps<{
-    campaignOptions?: string[];
-    promoterOptions?: string[];
-  }>(),
-  {
-    campaignOptions: () => [
-      "Outdoor Movie Rave 2.0",
-      "Campus Ambassador Program (CAP)",
-      "Advert",
-      "Freshers Connect",
-    ],
-    promoterOptions: () => [
-      "Mercy",
-      "Kay Kay",
-      "Trans Connect",
-      "Boluwatife",
-      "Naskid",
-    ],
-  },
-);
+/** Local form model; optional API fields are kept as empty strings/booleans. */
+interface IAudienceForm {
+  campaignId: string;
+  promoterId: string;
+  name: string;
+  email: string;
+  phone: string;
+  isVerified: boolean;
+  hasTransacted: boolean;
+}
 
 const modal = ref<ModalController | null>(null);
 const campaignDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
@@ -40,49 +29,85 @@ const promoterDropdown = ref<InstanceType<typeof AppDropdown> | null>(null);
 const fullNameInput = ref<HTMLInputElement | null>(null);
 
 const { createAudience, creatingAudience } = useAudienceStore();
+const { campaignOptions, fetchingCampaignOptions, fetchCampaignOptions } =
+  useCampaignStore();
+const { promoterOptions, fetchingPromoterOptions, fetchPromoterOptions } =
+  usePromotersStore();
 
-const form = reactive<ICreateAudiencePayload>({
-  campaign: "Outdoor Movie Rave 2.0",
+/** Returns a blank form model. */
+const emptyForm = (): IAudienceForm => ({
+  campaignId: "",
+  promoterId: "",
   name: "",
   email: "",
   phone: "",
-  promoter: "",
+  isVerified: false,
+  hasTransacted: false,
 });
 
-/** Vuelidate validation rules for creating an audience record. */
+const form = reactive<IAudienceForm>(emptyForm());
+
+/** Vuelidate validation rules mirroring the API's request rules. */
 const validations = computed(() => ({
-  campaign: {
+  campaignId: {
     required: helpers.withMessage("Campaign is required", required),
   },
   name: {
     required: helpers.withMessage("Full name is required", required),
+    maxLength: helpers.withMessage(
+      "Full name may not exceed 255 characters",
+      maxLength(255),
+    ),
   },
   email: {
     required: helpers.withMessage("Email address is required", required),
     email: helpers.withMessage("Enter a valid email address", email),
+    maxLength: helpers.withMessage(
+      "Email may not exceed 255 characters",
+      maxLength(255),
+    ),
   },
   phone: {
-    required: helpers.withMessage("Phone number is required", required),
+    maxLength: helpers.withMessage(
+      "Phone may not exceed 50 characters",
+      maxLength(50),
+    ),
   },
-  promoter: {},
+  promoterId: {},
 }));
 
 const v$ = useVuelidate(validations, form);
 
+/** Name of the selected campaign for the dropdown trigger. */
+const campaignLabel = computed(
+  () =>
+    campaignOptions.value.find((campaign) => campaign.id === form.campaignId)
+      ?.name ?? "Select campaign",
+);
+
+/** Name of the selected promoter, or a hint when no campaign is chosen. */
+const promoterLabel = computed(() => {
+  if (!form.campaignId) return "Select a campaign first";
+  return (
+    promoterOptions.value.find((promoter) => promoter.id === form.promoterId)
+      ?.name ?? "Select promoter (optional)"
+  );
+});
+
 /** Restores default form inputs and clears validation state. */
 const resetForm = (): void => {
-  form.campaign = props.campaignOptions[0] ?? "Outdoor Movie Rave 2.0";
-  form.name = "";
-  form.email = "";
-  form.phone = "";
-  form.promoter = "";
+  Object.assign(form, emptyForm());
+  promoterOptions.value = [];
   v$.value.$reset();
 };
 
-/** Opens the New Audience creation modal and sets focus. */
+/** Opens the modal, loads campaign options if needed and focuses the name field. */
 const open = async (): Promise<void> => {
   resetForm();
   modal.value?.showDialogBox();
+  if (!campaignOptions.value.length) {
+    void fetchCampaignOptions().catch(() => undefined);
+  }
   await nextTick();
   fullNameInput.value?.focus();
 };
@@ -92,35 +117,46 @@ const close = (): void => {
   modal.value?.hideDialogBox();
 };
 
-/** Selects a campaign and closes the selection menu. */
-const selectCampaign = (campaign: string): void => {
-  form.campaign = campaign;
-  v$.value.campaign.$touch();
+/**
+ * Selects a campaign, clears the promoter (it must belong to the campaign)
+ * and loads that campaign's promoters.
+ */
+const selectCampaign = (campaignId: string): void => {
   campaignDropdown.value?.closeDropdown();
+  v$.value.campaignId.$touch();
+  if (form.campaignId === campaignId) return;
+
+  form.campaignId = campaignId;
+  form.promoterId = "";
+  void fetchPromoterOptions(campaignId).catch(() => undefined);
 };
 
-/** Selects a promoter and closes the selection menu. */
-const selectPromoter = (promoter: string): void => {
-  form.promoter = promoter;
+/** Selects a promoter (empty to clear) and closes the selection menu. */
+const selectPromoter = (promoterId: string): void => {
+  form.promoterId = promoterId;
   promoterDropdown.value?.closeDropdown();
 };
 
-/** Validates inputs and creates the new audience record. */
+/** Validates inputs and records the new audience member. */
 const submit = async (): Promise<void> => {
-  const isValid = await v$.value.$validate();
-  if (!isValid) return;
+  v$.value.$touch();
+  if (v$.value.$invalid) return;
+
+  const payload: ICreateAudiencePayload = {
+    campaignId: form.campaignId,
+    name: form.name,
+    email: form.email,
+    promoterId: form.promoterId || undefined,
+    phone: form.phone || undefined,
+    isVerified: form.isVerified,
+    hasTransacted: form.hasTransacted,
+  };
 
   try {
-    await createAudience({ ...form });
+    await createAudience(payload);
     close();
-    useToastHandler().triggerToast(
-      "New audience member has been added successfully.",
-      "success",
-      "Audience added",
-      "large",
-    );
   } catch {
-    // Handled in store via ApiErrorHandler
+    // Reported by the store through ApiErrorHandler.
   }
 };
 
@@ -147,8 +183,8 @@ defineExpose({ open, close });
           label="Campaign"
           for="new-audience-campaign"
           :error="
-            v$.campaign.$error
-              ? String(v$.campaign.$errors[0]?.$message ?? '')
+            v$.campaignId.$error
+              ? String(v$.campaignId.$errors[0]?.$message ?? '')
               : ''
           "
         >
@@ -162,10 +198,10 @@ defineExpose({ open, close });
               id="new-audience-campaign"
               type="button"
               class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
-              :aria-invalid="v$.campaign.$error"
+              :aria-invalid="v$.campaignId.$error"
               aria-haspopup="listbox"
             >
-              {{ form.campaign || 'Select campaign' }}
+              <span class="truncate">{{ campaignLabel }}</span>
               <Icon
                 name="vent:arrow-down"
                 size="1rem"
@@ -178,18 +214,35 @@ defineExpose({ open, close });
                 aria-label="Campaign"
                 class="max-h-60 min-w-56 space-y-1 overflow-y-auto"
               >
-                <button
-                  v-for="option in props.campaignOptions"
-                  :key="option"
-                  type="button"
-                  role="option"
-                  :aria-selected="form.campaign === option"
-                  class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                  :class="{ 'bg-dashboard-bg-dark': form.campaign === option }"
-                  @click="selectCampaign(option)"
+                <div v-if="fetchingCampaignOptions" class="space-y-1 p-1">
+                  <span
+                    v-for="row in 4"
+                    :key="row"
+                    class="block h-8 w-full rounded-md shimmer-bg"
+                  />
+                </div>
+                <p
+                  v-else-if="!campaignOptions.length"
+                  class="px-3 py-2 text-sm text-dashboard-text"
                 >
-                  {{ option }}
-                </button>
+                  No campaigns available
+                </p>
+                <template v-else>
+                  <button
+                    v-for="campaign in campaignOptions"
+                    :key="campaign.id"
+                    type="button"
+                    role="option"
+                    :aria-selected="form.campaignId === campaign.id"
+                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                    :class="{
+                      'bg-dashboard-bg-dark': form.campaignId === campaign.id,
+                    }"
+                    @click="selectCampaign(campaign.id)"
+                  >
+                    {{ campaign.name }}
+                  </button>
+                </template>
               </div>
             </template>
           </AppDropdown>
@@ -236,7 +289,7 @@ defineExpose({ open, close });
 
         <!-- Phone Input -->
         <AppInputContainer
-          label="Phone"
+          label="Phone (optional)"
           for="new-audience-phone"
           :error="
             v$.phone.$error ? String(v$.phone.$errors[0]?.$message ?? '') : ''
@@ -249,7 +302,7 @@ defineExpose({ open, close });
             autocomplete="tel"
             placeholder="+234-"
             :aria-invalid="v$.phone.$error"
-            @blur="v$.phone.$touch()"
+            @input="v$.phone.$touch()"
           />
         </AppInputContainer>
 
@@ -267,10 +320,11 @@ defineExpose({ open, close });
             <button
               id="new-audience-promoter"
               type="button"
-              class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none"
+              class="flex w-full items-center justify-between gap-3 text-left text-base font-medium text-input-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
               aria-haspopup="listbox"
+              :disabled="!form.campaignId"
             >
-              {{ form.promoter || 'Select promoter' }}
+              <span class="truncate">{{ promoterLabel }}</span>
               <Icon
                 name="vent:arrow-down"
                 size="1rem"
@@ -283,22 +337,77 @@ defineExpose({ open, close });
                 aria-label="Promoter"
                 class="max-h-60 min-w-56 space-y-1 overflow-y-auto"
               >
-                <button
-                  v-for="option in props.promoterOptions"
-                  :key="option"
-                  type="button"
-                  role="option"
-                  :aria-selected="form.promoter === option"
-                  class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
-                  :class="{ 'bg-dashboard-bg-dark': form.promoter === option }"
-                  @click="selectPromoter(option)"
+                <div v-if="fetchingPromoterOptions" class="space-y-1 p-1">
+                  <span
+                    v-for="row in 4"
+                    :key="row"
+                    class="block h-8 w-full rounded-md shimmer-bg"
+                  />
+                </div>
+                <p
+                  v-else-if="!promoterOptions.length"
+                  class="px-3 py-2 text-sm text-dashboard-text"
                 >
-                  {{ option }}
-                </button>
+                  No promoters in this campaign
+                </p>
+                <template v-else>
+                  <button
+                    type="button"
+                    role="option"
+                    :aria-selected="!form.promoterId"
+                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-text transition hover:bg-dashboard-bg-dark"
+                    :class="{ 'bg-dashboard-bg-dark': !form.promoterId }"
+                    @click="selectPromoter('')"
+                  >
+                    No promoter
+                  </button>
+                  <button
+                    v-for="promoter in promoterOptions"
+                    :key="promoter.id"
+                    type="button"
+                    role="option"
+                    :aria-selected="form.promoterId === promoter.id"
+                    class="block w-full rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+                    :class="{
+                      'bg-dashboard-bg-dark': form.promoterId === promoter.id,
+                    }"
+                    @click="selectPromoter(promoter.id)"
+                  >
+                    {{ promoter.name }}
+                  </button>
+                </template>
               </div>
             </template>
           </AppDropdown>
         </AppInputContainer>
+
+        <!-- Status Flags -->
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-3 pt-1">
+          <div class="inline-flex items-center gap-2.5">
+            <AppCheckbox
+              id="new-audience-verified"
+              v-model:is-selected="form.isVerified"
+            />
+            <label
+              for="new-audience-verified"
+              class="text-sm text-dashboard-heading"
+            >
+              KYC verified
+            </label>
+          </div>
+          <div class="inline-flex items-center gap-2.5">
+            <AppCheckbox
+              id="new-audience-transacted"
+              v-model:is-selected="form.hasTransacted"
+            />
+            <label
+              for="new-audience-transacted"
+              class="text-sm text-dashboard-heading"
+            >
+              Has transacted
+            </label>
+          </div>
+        </div>
       </div>
 
       <!-- Action Buttons -->

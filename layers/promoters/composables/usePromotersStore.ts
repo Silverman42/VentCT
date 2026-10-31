@@ -254,8 +254,17 @@ export const usePromotersStore = () => {
       "usePromotersStore.fetchingPromoterAudiences",
       () => false,
     ),
+    fetchingPromoterOptions: useState<boolean>(
+      "usePromotersStore.fetchingPromoterOptions",
+      () => false,
+    ),
 
     promoters: useState<IPromoter[]>("usePromotersStore.promoters", () => []),
+    /** Promoters for selectors (e.g. the new audience form), kept apart from the list page. */
+    promoterOptions: useState<IPromoter[]>(
+      "usePromotersStore.promoterOptions",
+      () => [],
+    ),
     promoterSummary: useState<IPromoterSummary | null>(
       "usePromotersStore.promoterSummary",
       () => null,
@@ -353,6 +362,35 @@ export const usePromotersStore = () => {
   };
 
   const actions = {
+    /**
+     * Fetches up to 100 promoters for selectors, optionally narrowed to one
+     * campaign. Does not touch the promoters list page state.
+     */
+    async fetchPromoterOptions(campaignId: string = "") {
+      state.fetchingPromoterOptions.value = true;
+
+      return useApiClientHandler()
+        .$apiClient<IResponse<IPromoterListResponse>>(endpoints.PROMOTERS, {
+          method: "GET",
+          query: {
+            page: 1,
+            perPage: 100,
+            campaignId: campaignId || undefined,
+          },
+        })
+        .then((response) => {
+          state.promoterOptions.value = response.data?.promoters ?? [];
+          return state.promoterOptions.value;
+        })
+        .catch((error) => {
+          handleApiError(error, "Promoter fetch failed");
+          throw error;
+        })
+        .finally(() => {
+          state.fetchingPromoterOptions.value = false;
+        });
+    },
+
     /**
      * Fetches one page of promoters using the stored search/campaign filters.
      * When a page beyond the first comes back empty or fails, the page state
