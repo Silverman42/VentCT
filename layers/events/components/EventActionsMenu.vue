@@ -1,7 +1,8 @@
 <script setup lang="ts">
-type EventAction = "newAttendance" | "edit" | "delete";
+type EventAction = "viewQrCode" | "newAttendance" | "edit" | "delete";
 
 const emit = defineEmits<{
+  viewQrCode: [];
   newAttendance: [];
   edit: [];
   delete: [];
@@ -9,12 +10,18 @@ const emit = defineEmits<{
 
 const dropdown = ref<{ closeDropdown: () => void } | null>(null);
 
+/** Emitters for each menu action, keyed by action name. */
+const actionEmitters: Record<EventAction, () => void> = {
+  viewQrCode: () => emit("viewQrCode"),
+  newAttendance: () => emit("newAttendance"),
+  edit: () => emit("edit"),
+  delete: () => emit("delete"),
+};
+
 /** Closes the menu and emits the chosen event action. */
 const triggerAction = (action: EventAction): void => {
   dropdown.value?.closeDropdown();
-  if (action === "newAttendance") emit("newAttendance");
-  else if (action === "edit") emit("edit");
-  else emit("delete");
+  actionEmitters[action]();
 };
 </script>
 
@@ -30,6 +37,15 @@ const triggerAction = (action: EventAction): void => {
     </button>
     <template #dropdown_body>
       <div class="min-w-44 space-y-1" role="menu">
+        <button
+          type="button"
+          role="menuitem"
+          class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-dashboard-heading transition hover:bg-dashboard-bg-dark"
+          @click="triggerAction('viewQrCode')"
+        >
+          <Icon name="vent:qr-code" size="1rem" />
+          View QR Code
+        </button>
         <button
           type="button"
           role="menuitem"

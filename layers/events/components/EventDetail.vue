@@ -20,6 +20,7 @@ const {
   resetAttendees,
 } = useEventStore();
 
+const qrCodeModal = ref<ModalController | null>(null);
 const createAttendanceModal = ref<ModalController | null>(null);
 const editModal = ref<ModalController | null>(null);
 const deleteModal = ref<ModalController | null>(null);
@@ -37,32 +38,47 @@ const eventView = computed(() => {
   const summary = attendeeSummary.value;
   const target = metrics?.target ?? event?.target ?? 0;
 
+  const description = event?.description?.trim() ?? "";
+  const campaign = event?.campaign;
+  const registrationUrl =
+    event?.registrationUrl || event?.qrCode?.registrationUrl || "";
+
   return {
     exists: Boolean(event),
     name: event?.name ?? "Untitled event",
     venue: event?.venue || "Venue not set",
-    date: event?.event_date
-      ? DateFormatter.formatWithPattern(event.event_date, "MMM d, yyyy · h:mm a")
+    date: event?.eventDate
+      ? DateFormatter.formatWithPattern(event.eventDate, "MMM d, yyyy · h:mm a")
       : "Date not set",
     target: formatCount(target),
     status: (event?.status ?? "pending") as EventStatus,
-    statusLabel: event?.status_label,
+    statusLabel: event?.statusLabel,
+    info: {
+      description,
+      hasDescription: description.length > 0,
+      campaignName: campaign?.name ?? "",
+      campaignId: campaign?.id ?? event?.campaignId ?? "",
+      hasCampaign: Boolean(campaign?.id && campaign?.name),
+      autoCheckIn: event?.autoCheckInOnScan ?? false,
+      registrationUrl,
+      hasRegistrationUrl: registrationUrl.length > 0,
+    },
     metricCards: [
       { label: "Target", value: formatCount(target), fromAttendees: false },
       {
         label: "Total Attendees",
-        value: formatCount(summary?.total_attendees ?? metrics?.total_attendees ?? 0),
+        value: formatCount(summary?.totalAttendees ?? metrics?.totalAttendees ?? 0),
         fromAttendees: true,
       },
       {
         label: "Attended",
-        value: formatCount(summary?.attended_count ?? metrics?.attended_count ?? 0),
+        value: formatCount(summary?.attendedCount ?? metrics?.attendedCount ?? 0),
         fromAttendees: true,
       },
       {
         label: "Not Attended",
         value: formatCount(
-          summary?.not_attended_count ?? metrics?.not_attended_count ?? 0,
+          summary?.notAttendedCount ?? metrics?.notAttendedCount ?? 0,
         ),
         fromAttendees: true,
       },
@@ -93,6 +109,11 @@ const loadEvent = async (): Promise<void> => {
   } finally {
     hasLoaded.value = true;
   }
+};
+
+/** Opens the modal showing the event's check-in QR code. */
+const openQrCodeModal = (): void => {
+  void qrCodeModal.value?.open();
 };
 
 /** Opens the Create Attendance modal. */
@@ -179,11 +200,14 @@ watch(() => props.eventId, loadEvent, { immediate: true });
         </div>
 
         <EventActionsMenu
+          @view-qr-code="openQrCodeModal"
           @new-attendance="openCreateAttendance"
           @edit="openEditModal"
           @delete="openDeleteModal"
         />
       </section>
+
+      <EventInfoCard v-bind="eventView.info" />
 
       <section
         class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
@@ -216,6 +240,7 @@ watch(() => props.eventId, loadEvent, { immediate: true });
         @retry="loadAttendees"
       />
 
+      <EventQrCodeModal ref="qrCodeModal" :event="selectedEvent" />
       <EventCreateAttendanceModal
         ref="createAttendanceModal"
         :event="selectedEvent"

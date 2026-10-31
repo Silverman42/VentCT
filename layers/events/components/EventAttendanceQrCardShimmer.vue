@@ -5,7 +5,7 @@
 <template>
   <div aria-label="Loading QR code" role="status">
     <section
-      class="flex flex-col items-center rounded-2xl border border-dashboard-card-border bg-dashboard-bg px-5 pt-6 pb-8 sm:px-8"
+      class="flex flex-col items-center rounded-2xl border border-dashboard-card-border bg-dashboard-bg px-3 pt-6 pb-8 sm:px-8"
     >
       <div class="mt-8 flex w-full flex-col items-center gap-2.5">
         <span class="h-4 w-36 rounded shimmer-bg" />
@@ -14,9 +14,9 @@
         <span class="h-4 w-56 max-w-full rounded shimmer-bg" />
       </div>
 
-      <div class="mx-auto mt-8 w-fit rounded-2xl px-4 pt-4 pb-5">
+      <div class="mx-auto mt-8 w-full max-w-[372px] rounded-2xl px-3 pt-4 pb-5 sm:max-w-[380px] sm:px-4">
         <span
-          class="block h-[min(60vw,300px)] w-[min(60vw,300px)] rounded-3xl shimmer-bg"
+          class="block aspect-square w-full rounded-3xl shimmer-bg"
         />
         <div class="mt-5 flex flex-col items-center gap-2">
           <span class="h-4 w-60 max-w-full rounded shimmer-bg" />

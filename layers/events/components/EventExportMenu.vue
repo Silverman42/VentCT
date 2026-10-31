@@ -33,9 +33,9 @@ const serializeEvents = (format: ExportFormat): string => {
       event.name,
       event.target,
       event.venue ?? "",
-      event.event_date ?? "",
-      EVENT_STATUS_LABELS[event.status] ?? event.status_label ?? event.status,
-      event.registration_url ?? "",
+      event.eventDate ?? "",
+      EVENT_STATUS_LABELS[event.status] ?? event.statusLabel ?? event.status,
+      event.registrationUrl ?? "",
     ]
       .map(toCsvCell)
       .join(","),

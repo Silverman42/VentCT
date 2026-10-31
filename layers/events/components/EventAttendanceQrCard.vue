@@ -2,10 +2,11 @@
 import { QrcodeCanvas } from "qrcode.vue";
 import { copyToClipboard } from "~/utils/helpers/ClipboardCopy";
 import { DateFormatter } from "~/utils/helpers/DateFormatter";
-import type { IEvent } from "../composables/useEventStore";
+import type { IEvent, IEventDetails } from "../composables/useEventStore";
 
 const props = defineProps<{
-  event: IEvent;
+  /** Event to render; the detail response may already carry its QR payload. */
+  event: IEvent & Partial<Pick<IEventDetails, "qrCode">>;
 }>();
 
 const LOGO_URL = "/img/logo_primary.svg";
@@ -19,26 +20,41 @@ const qrCodeContainer = ref<HTMLElement | null>(null);
 const downloading = ref(false);
 const qrCodeFailed = ref(false);
 
+/** Registration link already embedded in the event detail response, if any. */
+const inlineRegistrationUrl = computed(
+  () => props.event.qrCode?.registrationUrl ?? "",
+);
+
 /** Public self-registration link encoded in the QR code for this event. */
-const registrationUrl = computed(() =>
-  eventQrCode.value?.eventId === props.event.id
+const registrationUrl = computed(() => {
+  if (inlineRegistrationUrl.value) return inlineRegistrationUrl.value;
+  return eventQrCode.value?.eventId === props.event.id
     ? (eventQrCode.value.registrationUrl ?? "")
-    : (props.event.registration_url ?? ""),
+    : (props.event.registrationUrl ?? "");
+});
+
+/** True only while this card is waiting on the standalone QR code request. */
+const isLoadingQrCode = computed(
+  () => fetchingQrCode.value && !inlineRegistrationUrl.value,
 );
 
 /** Human-readable event date, e.g. "October 26, 2026". */
 const formattedDate = computed(() =>
-  props.event.event_date
-    ? DateFormatter.formatWithPattern(props.event.event_date, "MMMM d, yyyy")
+  props.event.eventDate
+    ? DateFormatter.formatWithPattern(props.event.eventDate, "MMMM d, yyyy")
     : "Date to be announced",
 );
 
 /** Event venue with a fallback for missing values. */
 const venue = computed(() => props.event.venue || "Venue to be announced");
 
-/** Fetches the event's QR code payload, recording failures for the error state. */
+/**
+ * Fetches the event's QR code payload, recording failures for the error state.
+ * Skips the request when the detail response already included the QR payload.
+ */
 const loadQrCode = async (): Promise<void> => {
   qrCodeFailed.value = false;
+  if (inlineRegistrationUrl.value) return;
   try {
     await fetchEventQrCode(props.event.id);
   } catch {
@@ -160,7 +176,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <EventAttendanceQrCardShimmer v-if="fetchingQrCode" />
+  <EventAttendanceQrCardShimmer v-if="isLoadingQrCode" />
 
   <section
     v-else-if="qrCodeFailed || !registrationUrl"
@@ -179,7 +195,7 @@ onMounted(() => {
 
   <div v-else>
     <section
-      class="rounded-2xl bg-gradient-to-b from-brand-color-013 via-brand-color-013 to-brand-color-012 px-5 pt-6 pb-8 text-center sm:px-8 dark:from-dashboard-bg-dark dark:via-dashboard-bg-dark dark:to-dashboard-bg"
+      class="rounded-2xl bg-gradient-to-b from-brand-color-013 via-brand-color-013 to-brand-color-012 px-3 pt-6 pb-8 text-center sm:px-8 dark:from-dashboard-bg-dark dark:via-dashboard-bg-dark dark:to-dashboard-bg"
     >
       <div class="mt-8">
         <p class="text-sm text-dashboard-text">You are checking in to</p>
@@ -203,7 +219,7 @@ onMounted(() => {
       </div>
 
       <div
-        class="mx-auto mt-8 w-fit rounded-2xl bg-dashboard-bg/70 px-4 pt-4 pb-5"
+        class="mx-auto mt-8 w-full max-w-[372px] rounded-2xl bg-dashboard-bg/70 px-3 pt-4 pb-5 sm:max-w-[380px] sm:px-4"
       >
         <div
           ref="qrCodeContainer"
@@ -218,7 +234,7 @@ onMounted(() => {
               background="#ffffff"
               foreground="#000000"
               :margin="1"
-              class="h-[min(60vw,300px)] w-[min(60vw,300px)]"
+              class="block aspect-square !h-auto !w-full"
             />
           </div>
         </div>

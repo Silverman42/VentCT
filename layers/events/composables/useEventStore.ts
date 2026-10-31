@@ -33,52 +33,94 @@ export type ExportFormat = "xlsx" | "csv";
 /** Attendance metrics returned with an event. */
 export interface IEventMetrics {
   target: number;
-  total_attendees: number;
-  attended_count: number;
-  not_attended_count: number;
+  totalAttendees: number;
+  attendedCount: number;
+  notAttendedCount: number;
 }
 
 /** Event record returned by the events list endpoint. */
 export interface IEvent extends ITableBodyData {
   id: string;
-  campaign_id?: string;
+  campaignId?: string;
   name: string;
   slug: string;
   description?: string | null;
   venue: string;
   /** ISO date-time string. */
-  event_date: string;
+  eventDate: string;
   status: EventStatus;
-  status_label?: string;
+  statusLabel?: string;
   target: number;
-  banner_url?: string | null;
-  auto_check_in_on_scan?: boolean;
-  registration_url?: string;
+  bannerUrl?: string | null;
+  autoCheckInOnScan?: boolean;
+  registrationUrl?: string;
   metrics?: IEventMetrics;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** QR code payload embedded in the event detail response. */
 export interface IEventQrCodePayload {
-  registration_url: string;
-  qr_code_svg: string;
+  registrationUrl: string;
+  qrCodeSvg: string;
+}
+
+/** Campaign summary embedded in the event detail response. */
+export interface IEventCampaign {
+  id: string;
+  name: string;
+  slug: string | null;
+  target: number;
+  referralCode: string;
+  status: string;
+  statusLabel?: string;
+  /** `YYYY-MM-DD` date string. */
+  startsAt: string | null;
+  /** `YYYY-MM-DD` date string. */
+  endsAt: string | null;
+  promotersCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Attendance record embedded in the event detail response. */
+export interface IEventAttendance {
+  id: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  eventId: string;
+  eventName: string | null;
+  promoterId: string | null;
+  promoterName: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  referralCode: string | null;
+  status: AttendeeStatus;
+  statusLabel?: string;
+  method?: string;
+  methodLabel?: string;
+  /** ISO date-time string. */
+  attendedAt: string | null;
+  createdAt?: string;
 }
 
 /** Event record returned by the event detail endpoint. */
 export interface IEventDetails extends IEvent {
-  qr_code?: IEventQrCodePayload;
+  qrCode?: IEventQrCodePayload | null;
+  campaign?: IEventCampaign | null;
+  attendances?: IEventAttendance[];
 }
 
 /** Event counts by status for the summary cards. */
 export interface IEventSummary {
-  total_events: number;
-  pending_count: number;
-  running_count: number;
-  upcoming_count: number;
-  active_count: number;
-  completed_count: number;
-  cancelled_count: number;
+  totalEvents: number;
+  pendingCount: number;
+  runningCount: number;
+  upcomingCount: number;
+  activeCount: number;
+  completedCount: number;
+  cancelledCount: number;
 }
 
 /** Response data of the events list endpoint. */
@@ -94,16 +136,24 @@ export interface IEventAttendee extends ITableBodyData {
   email: string;
   phone?: string | null;
   status: AttendeeStatus;
-  status_label?: string;
+  statusLabel?: string;
   method?: string;
-  checked_in_at?: string | null;
+  methodLabel?: string;
+  campaignId?: string | null;
+  eventId?: string;
+  promoterId?: string | null;
+  promoterName?: string | null;
+  referralCode?: string | null;
+  /** ISO date-time the attendee checked in, or null when not yet attended. */
+  attendedAt?: string | null;
+  createdAt?: string;
 }
 
 /** Attendee counts for an event. */
 export interface IEventAttendeeSummary {
-  total_attendees: number;
-  attended_count: number;
-  not_attended_count: number;
+  totalAttendees: number;
+  attendedCount: number;
+  notAttendedCount: number;
 }
 
 /** Response data of the event attendees endpoint. */
@@ -173,6 +223,26 @@ export interface IMarkAttendanceResponse {
   updated_count: number;
   status: AttendeeStatus;
 }
+
+/**
+ * Maps a snake_case update payload onto the camelCase event shape so it can be
+ * merged into stored events without adding stray request-only keys.
+ */
+const toEventChanges = (payload: IUpdateEventPayload): Partial<IEvent> => {
+  const changes: Partial<IEvent> = {};
+  if (payload.campaign_id !== undefined) changes.campaignId = payload.campaign_id;
+  if (payload.name !== undefined) changes.name = payload.name;
+  if (payload.venue !== undefined) changes.venue = payload.venue;
+  if (payload.event_date !== undefined) changes.eventDate = payload.event_date;
+  if (payload.description !== undefined) changes.description = payload.description;
+  if (payload.status !== undefined) changes.status = payload.status;
+  if (payload.target !== undefined) changes.target = payload.target;
+  if (payload.banner_url !== undefined) changes.bannerUrl = payload.banner_url;
+  if (payload.auto_check_in_on_scan !== undefined) {
+    changes.autoCheckInOnScan = payload.auto_check_in_on_scan;
+  }
+  return changes;
+};
 
 /** Returns true when an API error is a 404 Not Found. */
 const isNotFoundError = (error: unknown): boolean =>
@@ -305,18 +375,18 @@ export const useEventStore = () => {
   const getters = {
     /** Event counts per status for the index summary cards. */
     eventStats: computed(() => ({
-      total: state.eventSummary.value?.total_events ?? 0,
-      pending: state.eventSummary.value?.pending_count ?? 0,
-      running: state.eventSummary.value?.running_count ?? 0,
-      completed: state.eventSummary.value?.completed_count ?? 0,
-      cancelled: state.eventSummary.value?.cancelled_count ?? 0,
+      total: state.eventSummary.value?.totalEvents ?? 0,
+      pending: state.eventSummary.value?.pendingCount ?? 0,
+      running: state.eventSummary.value?.runningCount ?? 0,
+      completed: state.eventSummary.value?.completedCount ?? 0,
+      cancelled: state.eventSummary.value?.cancelledCount ?? 0,
     })),
 
     /** Total attendees of the selected event, preferring the attendee summary. */
     totalAttendees: computed(
       () =>
-        state.attendeeSummary.value?.total_attendees ??
-        state.selectedEvent.value?.metrics?.total_attendees ??
+        state.attendeeSummary.value?.totalAttendees ??
+        state.selectedEvent.value?.metrics?.totalAttendees ??
         0,
     ),
   };
@@ -470,7 +540,10 @@ export const useEventStore = () => {
           body: payload,
         })
         .then((response) => {
-          const changes = { ...payload, ...(response.data ?? {}) } as Partial<IEvent>;
+          const changes: Partial<IEvent> = {
+            ...toEventChanges(payload),
+            ...(response.data ?? {}),
+          };
           if (state.selectedEvent.value?.id === eventId) {
             state.selectedEvent.value = {
               ...state.selectedEvent.value,
@@ -647,7 +720,7 @@ export const useEventStore = () => {
 
       const body: ICreateAttendanceRequest = {
         event_id: event.id,
-        campaign_id: event.campaign_id || undefined,
+        campaign_id: event.campaignId || undefined,
         name: payload.name,
         email: payload.email,
         phone: payload.phone || undefined,

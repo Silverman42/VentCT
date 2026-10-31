@@ -111,14 +111,14 @@ const toApiDate = (value: string): string =>
 
 /** Fills the form from an event, or restores empty values, and clears validation. */
 const resetForm = (event?: IEvent): void => {
-  form.campaign_id = event?.campaign_id ?? "";
+  form.campaign_id = event?.campaignId ?? "";
   form.name = event?.name ?? "";
   form.target = event?.target ?? null;
   form.venue = event?.venue ?? "";
-  form.date = toPickerDate(event?.event_date);
+  form.date = toPickerDate(event?.eventDate);
   form.status = event?.status ?? "pending";
   form.description = event?.description ?? "";
-  form.auto_check_in_on_scan = event?.auto_check_in_on_scan ?? true;
+  form.auto_check_in_on_scan = event?.autoCheckInOnScan ?? true;
   v$.value.$reset();
 };
 

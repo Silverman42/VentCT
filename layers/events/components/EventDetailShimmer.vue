@@ -16,6 +16,8 @@
       <span class="h-9 w-9 shrink-0 rounded-lg shimmer-bg" />
     </div>
 
+    <EventInfoCardShimmer />
+
     <section class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <article
         v-for="card in 4"

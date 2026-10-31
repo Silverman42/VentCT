@@ -4,7 +4,7 @@ import { email, helpers, maxLength, required } from "@vuelidate/validators";
 import type { TabsData } from "~/utils/types/misc/Tabs";
 import type {
   ICreateAttendancePayload,
-  IEvent,
+  IEventDetails,
 } from "../composables/useEventStore";
 
 interface ModalController {
@@ -13,7 +13,7 @@ interface ModalController {
 }
 
 const props = defineProps<{
-  event: IEvent;
+  event: IEventDetails;
 }>();
 
 const { createAttendance, creatingAttendance } = useEventStore();

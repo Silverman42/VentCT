@@ -48,7 +48,7 @@ const tableHeadings: ITableHeaderData[] = [
   { id: "email", name: "Email" },
   { id: "phone", name: "Phone", isHiddenOnMobile: true },
   { id: "status", name: "Status" },
-  { id: "checked_in_at", name: "Checked In", isHiddenOnMobile: true },
+  { id: "attendedAt", name: "Checked In", isHiddenOnMobile: true },
 ];
 
 const filterOptions: AttendeeStatusFilter[] = [
@@ -237,8 +237,8 @@ watch(attendeesSearch, (term) => {
         </AppPills>
       </template>
 
-      <template #col_checked_in_at="{ rowData }">
-        {{ formatCheckIn(rowData.checked_in_at) }}
+      <template #col_attendedAt="{ rowData }">
+        {{ formatCheckIn(rowData.attendedAt) }}
       </template>
 
       <template #table-footer>

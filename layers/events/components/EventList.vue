@@ -39,7 +39,7 @@ const loadFailed = ref(false);
 const tableHeadings: ITableHeaderData[] = [
   { id: "name", name: "Name" },
   { id: "venue", name: "Venue", isHiddenOnMobile: true },
-  { id: "event_date", name: "Date", isHiddenOnMobile: true },
+  { id: "eventDate", name: "Date", isHiddenOnMobile: true },
   { id: "target", name: "Target" },
   { id: "status", name: "Status" },
 ];
@@ -231,8 +231,8 @@ onMounted(() => {
           {{ rowData.venue || "—" }}
         </template>
 
-        <template #col_event_date="{ rowData }">
-          {{ formatEventDate(rowData.event_date) }}
+        <template #col_eventDate="{ rowData }">
+          {{ formatEventDate(rowData.eventDate) }}
         </template>
 
         <template #col_target="{ rowData }">
